@@ -146,6 +146,7 @@ fun ForecastScreen(resumes: Int, onEditProfile: () -> Unit) {
     val en = lang == Lang.EN
 
     var showPlaces by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
 
     fun refresh() {
         scope.launch {
@@ -175,14 +176,15 @@ fun ForecastScreen(resumes: Int, onEditProfile: () -> Unit) {
             PlacePrefs.useLocation(ctx)
             if (Locator.hasPermission(ctx)) refresh() else locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
         },
-        onPick = { area ->
-            showPlaces = false
-            PlacePrefs.pickCity(ctx, area)
-            state = WeatherRepository.loadCached(ctx, forAlarm = false)?.let { UiState.Ready(it) } ?: UiState.Loading
-            refresh()
-        },
+        onSearch = { showPlaces = false; showSearch = true },
         onEditProfile = { showPlaces = false; onEditProfile() },
     )
+    if (showSearch) PlaceSearchDialog(lang, onDismiss = { showSearch = false }) { picked ->
+        showSearch = false
+        PlacePrefs.pickPlace(ctx, picked)
+        state = WeatherRepository.loadCached(ctx, forAlarm = false)?.let { UiState.Ready(it) } ?: UiState.Loading
+        refresh()
+    }
 
     fun setPremium(on: Boolean) {
         Premium.setPreview(ctx, on)
@@ -595,7 +597,7 @@ private fun LguCard(lguName: String, lguUrl: String, lang: Lang) {
 // ---------- Place picker ----------
 
 @Composable
-private fun PlacePicker(lang: Lang, onDismiss: () -> Unit, onUseLocation: () -> Unit, onPick: (Area) -> Unit, onEditProfile: () -> Unit) {
+private fun PlacePicker(lang: Lang, onDismiss: () -> Unit, onUseLocation: () -> Unit, onSearch: () -> Unit, onEditProfile: () -> Unit) {
     val en = lang == Lang.EN
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -607,9 +609,8 @@ private fun PlacePicker(lang: Lang, onDismiss: () -> Unit, onUseLocation: () -> 
                     if (en) "Nearest covered city, or weather for where you are" else "Pinakamalapit na lungsod, o panahon kung nasaan ka",
                     onUseLocation)
                 HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
-                Areas.ALL.forEach { a ->
-                    PlaceOption(Icons.Rounded.LocationCity, a.name, a.province) { onPick(a) }
-                }
+                PlaceOption(Icons.Rounded.Search, if (en) "Choose a city or municipality" else "Pumili ng lungsod o bayan",
+                    if (en) "All provinces, cities and municipalities" else "Lahat ng probinsya, lungsod at bayan", onSearch)
                 HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
                 PlaceOption(Icons.Rounded.ManageAccounts, if (en) "Edit profile" else "I-edit ang profile",
                     if (en) "Nickname, location and LGU page" else "Palayaw, lokasyon at pahina ng LGU", onEditProfile)

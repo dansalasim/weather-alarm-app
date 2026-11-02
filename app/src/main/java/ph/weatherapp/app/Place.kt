@@ -51,10 +51,26 @@ object PlacePrefs {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean("auto", true).apply()
     }
 
-    /** Save a detected location: the nearest covered city if within 40 km, otherwise "Near you". */
+    /** A city or municipality picked from the full list. Covered cities keep their PAGASA feed and suspensions. */
+    fun pickPlace(ctx: Context, p: PhPlace) {
+        val area = Areas.byPsgc(p.code)
+        save(ctx, area?.let { Place.of(it) } ?: Place(p.display, p.lat, p.lon, null))
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean("auto", false).apply()
+    }
+
+    /**
+     * Save a detected location, named after the nearest city/municipality.
+     * If that is a covered city (or one is within 10 km), it keeps PAGASA data and suspensions.
+     */
     fun saveDetected(ctx: Context, lat: Double, lon: Double): Place {
-        val area = Areas.nearest(lat, lon)
-        val place = area?.let { Place.of(it, lat, lon) } ?: Place("Near you", lat, lon, null)
+        val town = PlaceDirectory.nearest(ctx, lat, lon)
+        val area = Areas.byPsgc(town?.code) ?: Areas.nearest(lat, lon, maxKm = 10.0)
+            ?: (if (town == null) Areas.nearest(lat, lon) else null)
+        val place = when {
+            area != null -> Place.of(area, lat, lon)
+            town != null -> Place(town.display, lat, lon, null)
+            else -> Place("Near you", lat, lon, null)
+        }
         save(ctx, place)
         return place
     }

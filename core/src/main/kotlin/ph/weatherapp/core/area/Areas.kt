@@ -15,16 +15,20 @@ data class Area(
     val lguName: String,
     /** The LGU's official Facebook page (shown as "LGU announcements"); null until confirmed. */
     val lguPageUrl: String?,
+    /** PSA PSGC code, to recognise the city when picked from the full list. */
+    val psgc: String,
 )
 
 object Areas {
     val ISABELA = Area("isabela-city-basilan", "City of Isabela", "Basilan", 6.7032, 121.9838,
-        lguName = "City Government of Isabela", lguPageUrl = "https://www.facebook.com/isabelacity.gov")
+        lguName = "City Government of Isabela", lguPageUrl = "https://www.facebook.com/isabelacity.gov", psgc = "0990101000")
     val ZAMBOANGA = Area("zamboanga-city", "Zamboanga City", "Zamboanga del Sur", 6.9214, 122.0790,
-        lguName = "City Government of Zamboanga", lguPageUrl = "https://www.facebook.com/zambocitygovt")
+        lguName = "City Government of Zamboanga", lguPageUrl = "https://www.facebook.com/zambocitygovt", psgc = "0931700000")
     val ALL = listOf(ISABELA, ZAMBOANGA)
 
     fun byId(id: String?): Area? = ALL.firstOrNull { it.id == id }
+
+    fun byPsgc(code: String?): Area? = ALL.firstOrNull { it.psgc == code }
 
     /** The covered city closest to the phone, if within [maxKm]. */
     fun nearest(lat: Double, lon: Double, maxKm: Double = 40.0): Area? =

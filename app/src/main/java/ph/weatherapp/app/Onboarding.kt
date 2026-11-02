@@ -125,6 +125,7 @@ fun SetupScreen(editing: Boolean, onDone: () -> Unit) {
     var usingLocation by remember { mutableStateOf(editing && PlacePrefs.isAuto(app) && Locator.hasPermission(app)) }
     var locating by remember { mutableStateOf(false) }
     var locationNote by remember { mutableStateOf<String?>(null) }
+    var showSearch by remember { mutableStateOf(false) }
     var lguName by remember { mutableStateOf(Profile.savedLguName(app)) }
     var lguUrl by remember { mutableStateOf(Profile.savedLguUrl(app)) }
     var lguEdited by remember { mutableStateOf(lguUrl.isNotBlank()) }
@@ -147,13 +148,22 @@ fun SetupScreen(editing: Boolean, onDone: () -> Unit) {
             place = p
             usingLocation = true
             locating = false
-            if (p.areaId == null) locationNote = "Your area isn't one of our covered cities yet. You'll still get the forecast for where you are."
+            if (p.areaId == null) locationNote = "PAGASA local data and suspension alerts are available for Isabela City and Zamboanga City so far. You'll still get the forecast for ${p.name}."
             prefillLgu(p)
         }
     }
 
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) detect() else locationNote = "Location not allowed. Pick your city below instead."
+    }
+
+    if (showSearch) PlaceSearchDialog(ph.weatherapp.core.engine.Lang.EN, onDismiss = { showSearch = false }) { picked ->
+        showSearch = false
+        PlacePrefs.pickPlace(app, picked)
+        place = PlacePrefs.get(app)
+        usingLocation = false
+        locationNote = null
+        prefillLgu(place)
     }
 
     val urlValid = lguUrl.isBlank() || Profile.normalizeFacebookUrl(lguUrl) != null
@@ -207,21 +217,12 @@ fun SetupScreen(editing: Boolean, onDone: () -> Unit) {
                 ) {
                     if (Locator.hasPermission(app)) detect() else permission.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
                 }
-                Text("or choose your city", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 2.dp))
-                Areas.ALL.forEach { a ->
-                    Choice(
-                        icon = Icons.Rounded.LocationCity,
-                        title = a.name,
-                        subtitle = a.province,
-                        selected = !usingLocation && place?.areaId == a.id,
-                    ) {
-                        PlacePrefs.pickCity(app, a)
-                        place = PlacePrefs.get(app)
-                        usingLocation = false
-                        locationNote = null
-                        prefillLgu(place)
-                    }
-                }
+                Choice(
+                    icon = Icons.Rounded.Search,
+                    title = "Choose a city or municipality",
+                    subtitle = if (!usingLocation && place != null) "📍 " + place!!.name else "All provinces, cities and municipalities",
+                    selected = !usingLocation && place != null,
+                ) { showSearch = true }
                 locationNote?.let { Text(it, color = Amber, fontSize = 12.sp, lineHeight = 16.sp) }
             }
 
