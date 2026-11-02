@@ -12,11 +12,16 @@ data class Area(
     val province: String,
     val lat: Double,
     val lon: Double,
+    val lguName: String,
+    /** The LGU's official Facebook page (shown as "LGU announcements"); null until confirmed. */
+    val lguPageUrl: String?,
 )
 
 object Areas {
-    val ISABELA = Area("isabela-city-basilan", "City of Isabela", "Basilan", 6.7032, 121.9838)
-    val ZAMBOANGA = Area("zamboanga-city", "Zamboanga City", "Zamboanga del Sur", 6.9214, 122.0790)
+    val ISABELA = Area("isabela-city-basilan", "City of Isabela", "Basilan", 6.7032, 121.9838,
+        lguName = "City Government of Isabela", lguPageUrl = "https://www.facebook.com/isabelacity.gov")
+    val ZAMBOANGA = Area("zamboanga-city", "Zamboanga City", "Zamboanga del Sur", 6.9214, 122.0790,
+        lguName = "City Government of Zamboanga", lguPageUrl = null)   // TODO: official page link from Dan
     val ALL = listOf(ISABELA, ZAMBOANGA)
 
     fun byId(id: String?): Area? = ALL.firstOrNull { it.id == id }

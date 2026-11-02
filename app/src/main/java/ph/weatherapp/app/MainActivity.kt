@@ -230,6 +230,7 @@ fun ForecastScreen(resumes: Int) {
                     r.next?.let { NextCard(it, lang) }
                 }
 
+                if (premium) Areas.byId(r.place.areaId)?.takeIf { it.lguPageUrl != null }?.let { LguCard(it, lang) }
                 AlarmsSection(lang, resumes)
                 PremiumCard(premium, lang) { setPremium(it) }
 
@@ -428,6 +429,7 @@ private fun PremiumCard(premium: Boolean, lang: Lang, onPreview: (Boolean) -> Un
             Perk(Icons.Rounded.RecordVoiceOver, if (en) "Alarm reads the forecast aloud" else "Binabasa ng alarm ang ulat")
             Perk(Icons.Rounded.Block, if (en) "No ads" else "Walang ads")
             Perk(Icons.Rounded.Campaign, if (en) "Class & work suspension alerts" else "Abiso ng suspensyon ng klase at trabaho")
+            Perk(Icons.Rounded.AccountBalance, if (en) "LGU announcements page" else "Pahina ng anunsyo ng LGU")
             Perk(Icons.Rounded.Timeline, if (en) "Soon: hourly & current weather" else "Malapit na: kada oras at kasalukuyang panahon")
             Text(
                 (if (en) "or ₱${Plan.ANNUAL.pricePhp}/year · ${Plan.ANNUAL.trialDays}-day free trial · save ₱${Entitlements.annualSavingsPhp()}"
@@ -513,6 +515,51 @@ internal fun SuspensionCard(sp: Suspension, lang: Lang) {
                 Icon(Icons.Rounded.OpenInNew, null, tint = Muted, modifier = Modifier.size(14.dp))
             }
         }
+    }
+}
+
+// ---------- LGU announcements (premium) ----------
+
+@Composable
+private fun LguCard(area: Area, lang: Lang) {
+    val ctx = LocalContext.current
+    val en = lang == Lang.EN
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(CardNavy)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Campaign, null, tint = Teal, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (en) "LGU announcements" else "Mga anunsyo ng LGU", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Tile)
+                .clickable { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(area.lguPageUrl))) } }
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(38.dp).background(Teal.copy(alpha = 0.12f), CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.AccountBalance, null, tint = Teal, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(area.lguName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (en) "Official Facebook page" else "Opisyal na Facebook page", color = Muted, fontSize = 12.sp)
+            }
+            Icon(Icons.Rounded.OpenInNew, null, tint = Teal, modifier = Modifier.size(18.dp))
+        }
+        Text(
+            if (en) "Suspensions, advisories and other official updates" else "Suspensyon, abiso at iba pang opisyal na balita",
+            color = Muted, fontSize = 12.sp,
+        )
     }
 }
 
