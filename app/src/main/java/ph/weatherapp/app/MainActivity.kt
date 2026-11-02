@@ -43,6 +43,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import ph.weatherapp.core.engine.HeatIndex
+import ph.weatherapp.core.area.Area
+import ph.weatherapp.core.area.Areas
+import ph.weatherapp.core.suspension.Suspension
+import ph.weatherapp.core.suspension.Suspensions
 import ph.weatherapp.core.engine.Periods
 import ph.weatherapp.core.premium.Entitlements
 import ph.weatherapp.core.premium.Plan
@@ -120,9 +124,15 @@ fun ForecastScreen(resumes: Int) {
     val scope = rememberCoroutineScope()
     val en = lang == Lang.EN
 
+    var showPlaces by remember { mutableStateOf(false) }
+
     fun refresh() {
         scope.launch {
             if (state !is UiState.Ready) state = UiState.Loading
+            if (Locator.refreshPlace(ctx)) {
+                // Moved to another city: show its saved forecast (if any) while downloading.
+                state = WeatherRepository.loadCached(ctx, forAlarm = false)?.let { UiState.Ready(it) } ?: UiState.Loading
+            }
             state = try {
                 UiState.Ready(WeatherRepository.load(ctx))
             } catch (e: Exception) {
@@ -130,7 +140,35 @@ fun ForecastScreen(resumes: Int) {
             }
         }
     }
-    LaunchedEffect(Unit) { refresh() }
+    val locationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) PlacePrefs.useLocation(ctx)
+        refresh()
+    }
+    LaunchedEffect(Unit) {
+        val prefs = ctx.getSharedPreferences("place", android.content.Context.MODE_PRIVATE)
+        if (PlacePrefs.isAuto(ctx) && !Locator.hasPermission(ctx) && !prefs.getBoolean("asked", false)) {
+            prefs.edit().putBoolean("asked", true).apply()
+            locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+        } else {
+            refresh()
+        }
+    }
+
+    if (showPlaces) PlacePicker(
+        lang = lang,
+        onDismiss = { showPlaces = false },
+        onUseLocation = {
+            showPlaces = false
+            PlacePrefs.useLocation(ctx)
+            if (Locator.hasPermission(ctx)) refresh() else locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+        },
+        onPick = { area ->
+            showPlaces = false
+            PlacePrefs.pickCity(ctx, area)
+            state = WeatherRepository.loadCached(ctx, forAlarm = false)?.let { UiState.Ready(it) } ?: UiState.Loading
+            refresh()
+        },
+    )
 
     fun setPremium(on: Boolean) {
         Premium.setPreview(ctx, on)
@@ -149,18 +187,22 @@ fun ForecastScreen(resumes: Int) {
     ) {
         // Header: place + time, language and refresh buttons
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.LocationOn, null, tint = Teal, modifier = Modifier.size(22.dp))
+            val place = (state as? UiState.Ready)?.r?.place ?: PlacePrefs.get(ctx)
+            Icon(if (PlacePrefs.isAuto(ctx) && Locator.hasPermission(ctx)) Icons.Rounded.MyLocation else Icons.Rounded.LocationOn,
+                null, tint = Teal, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(6.dp))
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable { showPlaces = true }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("City of Isabela", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text(place.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false))
+                    Icon(Icons.Rounded.ExpandMore, null, tint = Muted, modifier = Modifier.size(20.dp))
                     if (premium) {
                         Spacer(Modifier.width(8.dp))
                         Icon(Icons.Rounded.WorkspacePremium, "Premium", tint = Amber, modifier = Modifier.size(18.dp))
                     }
                 }
                 val sub = (state as? UiState.Ready)?.r?.fetchedAt
-                    ?.format(DateTimeFormatter.ofPattern("EEE, MMM d · h:mm a")) ?: "Basilan"
+                    ?.format(DateTimeFormatter.ofPattern("EEE, MMM d · h:mm a")) ?: ""
                 Text(sub, color = Muted, fontSize = 12.sp)
             }
             HeaderButton(Icons.Rounded.Translate, if (en) "FIL" else "EN") {
@@ -178,6 +220,7 @@ fun ForecastScreen(resumes: Int) {
             is UiState.Failed -> ErrorCard(s.message, en) { refresh() }
             is UiState.Ready -> {
                 val r = s.r
+                if (premium) r.suspensions.forEach { SuspensionCard(it, lang) }
                 urgentWarning(r.current, r.next)?.let { AlertBanner(it, lang) }
 
                 r.current?.let { HeroCard(it, lang, partial = r.currentIsPartial) }
@@ -384,7 +427,7 @@ private fun PremiumCard(premium: Boolean, lang: Lang, onPreview: (Boolean) -> Un
             Perk(Icons.Rounded.Schedule, if (en) "6-hour forecast blocks" else "Ulat kada 6 na oras")
             Perk(Icons.Rounded.RecordVoiceOver, if (en) "Alarm reads the forecast aloud" else "Binabasa ng alarm ang ulat")
             Perk(Icons.Rounded.Block, if (en) "No ads" else "Walang ads")
-            Perk(Icons.Rounded.Campaign, if (en) "Soon: class & work suspensions" else "Malapit na: suspensyon ng klase at trabaho")
+            Perk(Icons.Rounded.Campaign, if (en) "Class & work suspension alerts" else "Abiso ng suspensyon ng klase at trabaho")
             Perk(Icons.Rounded.Timeline, if (en) "Soon: hourly & current weather" else "Malapit na: kada oras at kasalukuyang panahon")
             Text(
                 (if (en) "or ₱${Plan.ANNUAL.pricePhp}/year · ${Plan.ANNUAL.trialDays}-day free trial · save ₱${Entitlements.annualSavingsPhp()}"
@@ -420,6 +463,95 @@ private fun Perk(icon: ImageVector, text: String) {
         Icon(icon, null, tint = Amber, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
         Text(text, fontSize = 14.sp)
+    }
+}
+
+// ---------- Suspensions (premium) ----------
+
+@Composable
+internal fun SuspensionCard(sp: Suspension, lang: Lang) {
+    val ctx = LocalContext.current
+    val en = lang == Lang.EN
+    val today = java.time.LocalDate.now(ph.weatherapp.core.engine.MANILA)
+    val isToday = sp.date == today
+    val accent = if (isToday) Red else Amber
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(accent.copy(alpha = 0.13f))
+            .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(18.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(36.dp).background(accent.copy(alpha = 0.2f), CircleShape), contentAlignment = Alignment.Center) {
+                Icon(if (sp.classes) Icons.Rounded.School else Icons.Rounded.Work, null, tint = accent, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(Suspensions.dayLabel(sp, today, lang).uppercase(), color = accent, fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text(sp.title(lang), fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Text(sp.scope(), color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
+        sp.details?.let { Text(it, color = Muted, fontSize = 13.sp, lineHeight = 17.sp) }
+        val src = sp.source ?: (if (en) "Official announcement" else "Opisyal na anunsyo")
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .then(if (sp.sourceUrl != null) Modifier.clickable {
+                    runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(sp.sourceUrl))) }
+                } else Modifier)
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text((if (en) "Source: " else "Pinagmulan: ") + src, color = Muted, fontSize = 12.sp)
+            if (sp.sourceUrl != null) {
+                Spacer(Modifier.width(4.dp))
+                Icon(Icons.Rounded.OpenInNew, null, tint = Muted, modifier = Modifier.size(14.dp))
+            }
+        }
+    }
+}
+
+// ---------- Place picker ----------
+
+@Composable
+private fun PlacePicker(lang: Lang, onDismiss: () -> Unit, onUseLocation: () -> Unit, onPick: (Area) -> Unit) {
+    val en = lang == Lang.EN
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardNavy,
+        title = { Text(if (en) "Location" else "Lokasyon", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                PlaceOption(Icons.Rounded.MyLocation, if (en) "Use my location" else "Gamitin ang aking lokasyon",
+                    if (en) "Nearest covered city, or weather for where you are" else "Pinakamalapit na lungsod, o panahon kung nasaan ka",
+                    onUseLocation)
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                Areas.ALL.forEach { a ->
+                    PlaceOption(Icons.Rounded.LocationCity, a.name, a.province) { onPick(a) }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(if (en) "Close" else "Isara") } },
+    )
+}
+
+@Composable
+private fun PlaceOption(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = Teal, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(12.dp))
+        Column {
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, color = Muted, fontSize = 12.sp)
+        }
     }
 }
 

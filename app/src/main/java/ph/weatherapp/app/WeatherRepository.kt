@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
+import ph.weatherapp.core.area.Areas
 import ph.weatherapp.core.engine.Consolidator
 import ph.weatherapp.core.engine.MANILA
 import ph.weatherapp.core.engine.Windows
@@ -16,6 +17,9 @@ import ph.weatherapp.core.pagasa.PagasaFeedJson
 import ph.weatherapp.core.pagasa.toAdvisory
 import ph.weatherapp.core.sources.ALL_SOURCES
 import ph.weatherapp.core.sources.MetNorway
+import ph.weatherapp.core.suspension.Suspension
+import ph.weatherapp.core.suspension.Suspensions
+import ph.weatherapp.core.suspension.SuspensionsJson
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -25,24 +29,23 @@ import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
 
 /**
- * Fetches every source, keeps the raw responses on the phone, and runs the engine
- * for two 12-hour windows. If the internet is down, the last saved responses are used,
- * so an alarm can still show a forecast with no signal.
+ * Fetches every source for the user's place, keeps the raw responses on the phone, and runs
+ * the engine. If the internet is down, the last saved responses are used, so an alarm can
+ * still show a forecast with no signal.
  */
 object WeatherRepository {
 
-    // Fixed to Isabela City (Brgy. Sunrise Village) for now. GPS comes in a later build.
-    const val PLACE = "City of Isabela, Basilan"
-    private const val LAT = 6.7032
-    private const val LON = 121.9838
-    private const val AREA_ID = "isabela-city-basilan"
-    private const val FEED_BASE = "https://raw.githubusercontent.com/dansalasim/weather-alarm-app/feed/$AREA_ID/"
+    private const val FEED_ROOT = "https://raw.githubusercontent.com/dansalasim/weather-alarm-app/feed/"
+    /** Cities whose morning PAGASA feed exists (the CDRRMO tasks publish Isabela). */
+    private val PAGASA_FEED_AREAS = setOf(Areas.ISABELA.id)
     private const val MAX_CACHE_AGE_HOURS = 36L
 
     data class Forecasts(
+        val place: Place,
         val windows: List<WindowForecast>, // free: two 12-hour windows; premium: four 6-hour blocks
         val sixHour: Boolean,
         val currentIsPartial: Boolean,     // first window already started → "until 6 PM"
+        val suspensions: List<Suspension>, // this city, today and tomorrow
         val failures: List<String>,
         val fetchedAt: ZonedDateTime,      // when the oldest data used was downloaded
         val fromCache: Boolean,
@@ -60,24 +63,28 @@ object WeatherRepository {
     suspend fun load(context: Context, forAlarm: Boolean = false, quick: Boolean = false): Forecasts =
         withContext(Dispatchers.IO) {
             val now = ZonedDateTime.now(MANILA)
-            val dir = cacheDir(context)
+            val place = PlacePrefs.get(context)
+            val dir = cacheDir(context, place)
+            val shared = cacheDir(context, null)
             val timeout = if (quick) 6_000 else 15_000
 
-            data class Raw(val id: String, val json: String?, val time: Instant?, val live: Boolean)
+            data class Raw(val json: String?, val time: Instant?, val live: Boolean)
 
-            fun fetchOrCache(id: String, url: String): Raw = try {
+            fun fetchOrCache(folder: File, id: String, url: String): Raw = try {
                 val body = httpGet(url, timeout)
-                save(File(dir, "$id.json"), body)
-                Raw(id, body, Instant.now(), live = true)
+                save(File(folder, "$id.json"), body)
+                Raw(body, Instant.now(), live = true)
             } catch (e: Exception) {
-                val f = File(dir, "$id.json")
-                if (f.exists() && fresh(f)) Raw(id, f.readText(), Instant.ofEpochMilli(f.lastModified()), live = false)
-                else Raw(id, null, null, live = false)
+                val f = File(folder, "$id.json")
+                if (f.exists() && fresh(f)) Raw(f.readText(), Instant.ofEpochMilli(f.lastModified()), live = false)
+                else Raw(null, null, live = false)
             }
 
-            val sourceRaw = ALL_SOURCES.map { s -> async { s to fetchOrCache(s.id, s.url(LAT, LON)) } }
-            val regional = async { fetchOrCache("pagasa-regional", FEED_BASE + "regional.json") }
-            val heat = async { fetchOrCache("pagasa-heat", FEED_BASE + "heat.json") }
+            val hasPagasa = place.areaId in PAGASA_FEED_AREAS
+            val sourceRaw = ALL_SOURCES.map { s -> async { s to fetchOrCache(dir, s.id, s.url(place.lat, place.lon)) } }
+            val regional = async { if (hasPagasa) fetchOrCache(dir, "pagasa-regional", "$FEED_ROOT${place.areaId}/regional.json") else null }
+            val heat = async { if (hasPagasa) fetchOrCache(dir, "pagasa-heat", "$FEED_ROOT${place.areaId}/heat.json") else null }
+            val susp = async { if (place.areaId != null) fetchOrCache(shared, "suspensions", FEED_ROOT + "suspensions.json") else null }
 
             val raws = sourceRaw.awaitAll()
             val sources = mutableListOf<SourceForecast>()
@@ -88,15 +95,18 @@ object WeatherRepository {
             }
             val reg = regional.await()
             val ht = heat.await()
-            if (reg.json == null && ht.json == null) failures += "PAGASA"
+            val sp = susp.await()
+            if (hasPagasa && reg?.json == null && ht?.json == null) failures += "PAGASA"
             if (sources.isEmpty()) throw IOException("No forecast available. Check your internet connection.")
 
-            val used = raws.map { it.second } + listOf(reg, ht)
+            val used = raws.map { it.second } + listOfNotNull(reg, ht)
             val oldest = used.mapNotNull { it.time }.minOrNull() ?: Instant.now()
             compute(
                 now = now,
+                place = place,
                 sources = sources,
-                feed = PagasaFeedJson.parse(AREA_ID, reg.json, ht.json, now),
+                feed = PagasaFeedJson.parse(place.areaId ?: "", reg?.json, ht?.json, now),
+                suspensionsJson = sp?.json,
                 forAlarm = forAlarm,
                 sixHour = Premium.isActive(context),
                 failures = failures,
@@ -108,18 +118,22 @@ object WeatherRepository {
     /** Saved data only, no network. Fast enough to call while an alarm is going off. */
     fun loadCached(context: Context, forAlarm: Boolean = true): Forecasts? = runCatching {
         val now = ZonedDateTime.now(MANILA)
-        val dir = cacheDir(context)
-        fun read(id: String) = File(dir, "$id.json").takeIf { it.exists() && fresh(it) }
-        val files = ALL_SOURCES.mapNotNull { s -> read(s.id)?.let { s to it } }
+        val place = PlacePrefs.get(context)
+        val dir = cacheDir(context, place)
+        fun read(folder: File, id: String) = File(folder, "$id.json").takeIf { it.exists() && fresh(it) }
+        val files = ALL_SOURCES.mapNotNull { s -> read(dir, s.id)?.let { s to it } }
         val sources = files.mapNotNull { (s, f) -> runCatching { s.parse(f.readText(), now) }.getOrNull() }
         if (sources.isEmpty()) return null
-        val reg = read("pagasa-regional")
-        val ht = read("pagasa-heat")
+        val reg = read(dir, "pagasa-regional")
+        val ht = read(dir, "pagasa-heat")
+        val sp = read(cacheDir(context, null), "suspensions")
         val oldest = (files.map { it.second } + listOfNotNull(reg, ht)).minOf { it.lastModified() }
         compute(
             now = now,
+            place = place,
             sources = sources,
-            feed = PagasaFeedJson.parse(AREA_ID, reg?.readText(), ht?.readText(), now),
+            feed = PagasaFeedJson.parse(place.areaId ?: "", reg?.readText(), ht?.readText(), now),
+            suspensionsJson = sp?.readText(),
             forAlarm = forAlarm,
             sixHour = Premium.isActive(context),
             failures = emptyList(),
@@ -130,8 +144,10 @@ object WeatherRepository {
 
     private fun compute(
         now: ZonedDateTime,
+        place: Place,
         sources: List<SourceForecast>,
         feed: PagasaFeed,
+        suspensionsJson: String?,
         forAlarm: Boolean,
         sixHour: Boolean,
         failures: List<String>,
@@ -158,16 +174,20 @@ object WeatherRepository {
             engine.consolidate(w, sources, feed.toAdvisory(w))
         }
         return Forecasts(
+            place = place,
             windows = forecasts,
             sixHour = sixHour,
             currentIsPartial = partial,
+            suspensions = Suspensions.upcoming(SuspensionsJson.parse(suspensionsJson), place.areaId, now.toLocalDate()),
             failures = failures,
             fetchedAt = fetchedAt,
             fromCache = fromCache,
         )
     }
 
-    private fun cacheDir(context: Context) = File(context.filesDir, "forecast-cache").apply { mkdirs() }
+    /** One folder per place, so switching cities never mixes forecasts. [place] null = shared files. */
+    private fun cacheDir(context: Context, place: Place?) =
+        File(context.filesDir, "forecast-cache/" + (place?.cacheKey ?: "shared")).apply { mkdirs() }
 
     private fun fresh(f: File) =
         System.currentTimeMillis() - f.lastModified() < MAX_CACHE_AGE_HOURS * 3_600_000

@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- City-level location: picks the nearest covered city for PAGASA data and suspensions -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Exact alarm time: USE_EXACT_ALARM (Android 13+) is for alarm-clock apps; SCHEDULE_EXACT_ALARM covers 12–12L. -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />

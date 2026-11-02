@@ -1,0 +1,37 @@
+package ph.weatherapp.core.area
+
+import kotlin.math.*
+
+/**
+ * Cities with local coverage: a PAGASA feed and suspension announcements.
+ * Anywhere else still gets the forecast for the phone's exact coordinates.
+ */
+data class Area(
+    val id: String,
+    val name: String,
+    val province: String,
+    val lat: Double,
+    val lon: Double,
+)
+
+object Areas {
+    val ISABELA = Area("isabela-city-basilan", "City of Isabela", "Basilan", 6.7032, 121.9838)
+    val ZAMBOANGA = Area("zamboanga-city", "Zamboanga City", "Zamboanga del Sur", 6.9214, 122.0790)
+    val ALL = listOf(ISABELA, ZAMBOANGA)
+
+    fun byId(id: String?): Area? = ALL.firstOrNull { it.id == id }
+
+    /** The covered city closest to the phone, if within [maxKm]. */
+    fun nearest(lat: Double, lon: Double, maxKm: Double = 40.0): Area? =
+        ALL.map { it to distanceKm(lat, lon, it.lat, it.lon) }
+            .filter { it.second <= maxKm }
+            .minByOrNull { it.second }?.first
+
+    fun distanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val r = 6371.0
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = sin(dLat / 2).pow(2) + cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2)
+        return 2 * r * asin(sqrt(a))
+    }
+}

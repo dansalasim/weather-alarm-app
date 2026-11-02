@@ -1,0 +1,59 @@
+name: Class/work suspension
+
+# Runs when a "Class/work suspension" issue form is submitted.
+# Only the repository owner and collaborators can post: the repo is public.
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: suspensions-feed
+  cancel-in-progress: false
+
+jobs:
+  update-feed:
+    if: >-
+      startsWith(github.event.issue.title, '[Suspension]') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: main
+
+      - uses: actions/checkout@v4
+        with:
+          ref: feed
+          path: feed
+
+      - name: Update suspensions.json
+        id: update
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+        run: python3 main/.github/scripts/suspensions.py feed/suspensions.json >> "$GITHUB_OUTPUT"
+
+      - name: Publish to the feed
+        if: steps.update.outputs.ok == 'true'
+        working-directory: feed
+        run: |
+          git config user.name "Suspension form"
+          git config user.email "noreply@github.com"
+          git add suspensions.json
+          git commit -m "Suspension update from #${{ github.event.issue.number }}"
+          for i in 1 2 3; do git push origin feed && break; git pull --rebase origin feed; done
+
+      - name: Reply on the form
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} --body-file result.md
+          if [ "${{ steps.update.outputs.ok }}" = "true" ]; then
+            gh issue close ${{ github.event.issue.number }}
+          fi

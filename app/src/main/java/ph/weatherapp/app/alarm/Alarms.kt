@@ -189,11 +189,18 @@ object AlarmNotifier {
         ensureChannel(ctx)
         val a = AlarmPrefs.get(ctx, id)
         val lang = AlarmPrefs.lang(ctx)
-        val f = WeatherRepository.loadCached(ctx, forAlarm = true)?.current
-        val summary = f?.let {
+        val data = WeatherRepository.loadCached(ctx, forAlarm = true)
+        val f = data?.current
+        val weather = f?.let {
             val top = Recommender.recommend(it).first().short(lang)
             "${it.rainChancePct}% ${if (lang == Lang.EN) "rain" else "ulan"} · ${it.tempMinC}–${it.tempMaxC}°C · $top"
         } ?: if (lang == Lang.EN) "Open to see today's weather" else "Buksan para makita ang panahon"
+        // Premium: put today's class/work suspension first.
+        val today = ZonedDateTime.now(MANILA).toLocalDate()
+        val suspension = data?.suspensions?.firstOrNull { it.date == today }
+            ?.takeIf { ph.weatherapp.app.Premium.isActive(ctx) }
+            ?.let { it.title(lang).uppercase() + " · " }
+        val summary = (suspension ?: "") + weather
 
         val open = PendingIntent.getActivity(
             ctx, id * 10 + 6,

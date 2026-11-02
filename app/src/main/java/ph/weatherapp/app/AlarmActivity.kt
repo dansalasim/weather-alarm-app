@@ -146,6 +146,7 @@ private fun AlarmScreen(
                     color = Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 24.dp),
                 )
             } else {
+                if (Premium.isActive(ctx)) d.suspensions.forEach { SuspensionCard(it, lang) }
                 urgentWarning(d.current, d.next)?.let { AlertBanner(it, lang) }
                 if (spec.isMain) {
                     d.current?.let { HeroCard(it, lang, partial = d.currentIsPartial) }
