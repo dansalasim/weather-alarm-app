@@ -98,7 +98,10 @@ fun PagasaFeed.toAdvisory(window: ForecastWindow? = null): PagasaAdvisory {
         heatIndex == null -> null
         window == null -> heatIndex.peakC
         window.kind != WindowKind.DAY || heatIndex.date != window.start.toLocalDate() -> null
-        else -> heatIndex.hourlyC.filterKeys { it >= window.start.hour && it < 18 }.values.maxOrNull()
+        else -> {
+            val endHour = if (window.end.hour == 0) 24 else window.end.hour
+            heatIndex.hourlyC.filterKeys { it >= window.start.hour && it < endHour }.values.maxOrNull()
+        }
     }
     return PagasaAdvisory(
         issuedAt = listOfNotNull(regional?.issuedAt, heatIndex?.issuedAt).minOrNull() ?: updatedAt,

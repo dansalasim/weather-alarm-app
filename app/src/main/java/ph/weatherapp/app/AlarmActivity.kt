@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Alarm
 import androidx.compose.material.icons.rounded.Snooze
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +29,8 @@ import ph.weatherapp.app.alarm.AlarmScheduler
 import ph.weatherapp.app.alarm.AlarmSpec
 import ph.weatherapp.core.engine.Lang
 import ph.weatherapp.core.engine.MANILA
+import ph.weatherapp.core.engine.Recommender
+import ph.weatherapp.core.engine.VoiceScript
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
@@ -49,27 +52,40 @@ class AlarmActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         val id = intent.getIntExtra(AlarmScheduler.EXTRA_ID, AlarmSpec.MAIN)
+        speaker = if (Premium.isActive(this)) Speaker(this) else null
         setContent {
             AppTheme {
                 AlarmScreen(
                     id = id,
+                    speaker = speaker,
                     onSnooze = {
                         AlarmNotifier.stop(this, id)
                         AlarmScheduler.snooze(this, id)
                         finish()
                     },
-                    onDismiss = {
-                        AlarmNotifier.stop(this, id)
-                        finish()
-                    },
+                    onStopRinging = { AlarmNotifier.stop(this, id) },
+                    onClose = { finish() },
                 )
             }
         }
     }
+
+    private var speaker: Speaker? = null
+
+    override fun onDestroy() {
+        speaker?.shutdown()
+        super.onDestroy()
+    }
 }
 
 @Composable
-private fun AlarmScreen(id: Int, onSnooze: () -> Unit, onDismiss: () -> Unit) {
+private fun AlarmScreen(
+    id: Int,
+    speaker: Speaker?,
+    onSnooze: () -> Unit,
+    onStopRinging: () -> Unit,
+    onClose: () -> Unit,
+) {
     val ctx = LocalContext.current.applicationContext
     val lang = AlarmPrefs.lang(ctx)
     val en = lang == Lang.EN
@@ -80,6 +96,24 @@ private fun AlarmScreen(id: Int, onSnooze: () -> Unit, onDismiss: () -> Unit) {
     LaunchedEffect(Unit) {
         runCatching { WeatherRepository.load(ctx, forAlarm = true, quick = true) }.getOrNull()?.let { data = it }
     }
+    var speaking by remember { mutableStateOf(false) }
+
+    // Premium: after Dismiss, read the forecast aloud, then close. Free: just close.
+    fun readAloud(thenClose: Boolean) {
+        val d = data ?: return onClose()
+        val main = d.current ?: return onClose()
+        if (speaker == null) return onClose()
+        speaking = true
+        speaker.speak(lang, { l -> VoiceScript.build(main, d.next, Recommender.recommend(main), l) }) {
+            speaking = false
+            if (thenClose) onClose()
+        }
+    }
+    fun dismiss() {
+        onStopRinging()
+        if (speaker != null && data?.current != null) readAloud(thenClose = true) else onClose()
+    }
+
     var now by remember { mutableStateOf(ZonedDateTime.now(MANILA)) }
     LaunchedEffect(Unit) {
         while (true) { delay(1_000); now = ZonedDateTime.now(MANILA) }
@@ -115,7 +149,11 @@ private fun AlarmScreen(id: Int, onSnooze: () -> Unit, onDismiss: () -> Unit) {
                 urgentWarning(d.current, d.next)?.let { AlertBanner(it, lang) }
                 if (spec.isMain) {
                     d.current?.let { HeroCard(it, lang, partial = d.currentIsPartial) }
-                    d.next?.let { NextCard(it, lang) }
+                    if (d.sixHour) {
+                        if (d.later.isNotEmpty()) BlocksCard(d.later, lang)
+                    } else {
+                        d.next?.let { NextCard(it, lang) }
+                    }
                 } else {
                     // Quick check before leaving: one compact card with the top three tips.
                     d.current?.let { NextCard(it, lang, partial = d.currentIsPartial, adviceCount = 3) }
@@ -130,6 +168,21 @@ private fun AlarmScreen(id: Int, onSnooze: () -> Unit, onDismiss: () -> Unit) {
             }
         }
 
+        if (speaking) {
+            Button(
+                onClick = { speaker?.stop(); speaking = false; onClose() },
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp).height(60.dp),
+                shape = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Teal, contentColor = Navy),
+            ) {
+                Icon(Icons.Rounded.RecordVoiceOver, null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (en) "Reading forecast… tap to stop" else "Binabasa ang ulat… pindutin para itigil",
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            }
+            return@Column
+        }
+
         // Big buttons, always visible at the bottom
         Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(
@@ -142,11 +195,15 @@ private fun AlarmScreen(id: Int, onSnooze: () -> Unit, onDismiss: () -> Unit) {
                 Text("${AlarmScheduler.SNOOZE_MINUTES} min", color = Teal, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }
             Button(
-                onClick = onDismiss,
+                onClick = { dismiss() },
                 modifier = Modifier.weight(1f).height(60.dp),
                 shape = RoundedCornerShape(18.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Teal, contentColor = Navy),
             ) {
+                if (speaker != null) {
+                    Icon(Icons.Rounded.RecordVoiceOver, null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                }
                 Text(if (en) "Dismiss" else "Itigil", fontSize = 17.sp, fontWeight = FontWeight.Bold)
             }
         }

@@ -1,6 +1,7 @@
 package ph.weatherapp.app
 
 import android.os.Bundle
+import com.google.android.gms.ads.MobileAds
 import android.Manifest
 import android.app.TimePickerDialog
 import android.content.Intent
@@ -42,6 +43,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import ph.weatherapp.core.engine.HeatIndex
+import ph.weatherapp.core.engine.Periods
+import ph.weatherapp.core.premium.Entitlements
+import ph.weatherapp.core.premium.Plan
 import ph.weatherapp.core.engine.Lang
 import ph.weatherapp.core.engine.Priority
 import ph.weatherapp.core.engine.Recommendation
@@ -60,6 +64,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AlarmNotifier.ensureChannel(this)
         AlarmScheduler.scheduleAll(this)
+        Thread { MobileAds.initialize(this) {} }.start()   // banner ads (free version)
         setContent { AppTheme { ForecastScreen(resumes.intValue) } }
     }
 
@@ -111,6 +116,7 @@ fun ForecastScreen(resumes: Int) {
         mutableStateOf<UiState>(WeatherRepository.loadCached(ctx, forAlarm = false)?.let { UiState.Ready(it) } ?: UiState.Loading)
     }
     var lang by remember { mutableStateOf(AlarmPrefs.lang(ctx)) }
+    var premium by remember { mutableStateOf(Premium.isActive(ctx)) }
     val scope = rememberCoroutineScope()
     val en = lang == Lang.EN
 
@@ -126,10 +132,17 @@ fun ForecastScreen(resumes: Int) {
     }
     LaunchedEffect(Unit) { refresh() }
 
+    fun setPremium(on: Boolean) {
+        Premium.setPreview(ctx, on)
+        premium = on
+        WeatherRepository.loadCached(ctx, forAlarm = false)?.let { state = UiState.Ready(it) }
+        refresh()
+    }
+
+    Column(Modifier.fillMaxSize().systemBarsPadding()) {
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .systemBarsPadding()
+            .weight(1f)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -139,7 +152,13 @@ fun ForecastScreen(resumes: Int) {
             Icon(Icons.Rounded.LocationOn, null, tint = Teal, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(6.dp))
             Column(Modifier.weight(1f)) {
-                Text("City of Isabela", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("City of Isabela", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    if (premium) {
+                        Spacer(Modifier.width(8.dp))
+                        Icon(Icons.Rounded.WorkspacePremium, "Premium", tint = Amber, modifier = Modifier.size(18.dp))
+                    }
+                }
                 val sub = (state as? UiState.Ready)?.r?.fetchedAt
                     ?.format(DateTimeFormatter.ofPattern("EEE, MMM d · h:mm a")) ?: "Basilan"
                 Text(sub, color = Muted, fontSize = 12.sp)
@@ -162,9 +181,14 @@ fun ForecastScreen(resumes: Int) {
                 urgentWarning(r.current, r.next)?.let { AlertBanner(it, lang) }
 
                 r.current?.let { HeroCard(it, lang, partial = r.currentIsPartial) }
-                r.next?.let { NextCard(it, lang) }
+                if (r.sixHour) {
+                    if (r.later.isNotEmpty()) BlocksCard(r.later, lang)
+                } else {
+                    r.next?.let { NextCard(it, lang) }
+                }
 
                 AlarmsSection(lang, resumes)
+                PremiumCard(premium, lang) { setPremium(it) }
 
                 Text(
                     "DOST-PAGASA · ECMWF · GFS · Open-Meteo · MET Norway (CC BY 4.0)" +
@@ -176,6 +200,8 @@ fun ForecastScreen(resumes: Int) {
                 )
             }
         }
+    }
+        if (!premium) BannerAd()
     }
 }
 
@@ -290,6 +316,110 @@ private fun PermissionRow(text: String, onClick: () -> Unit) {
         Spacer(Modifier.width(10.dp))
         Text(text, fontSize = 13.sp, modifier = Modifier.weight(1f))
         Icon(Icons.Rounded.ChevronRight, null, tint = Amber, modifier = Modifier.size(18.dp))
+    }
+}
+
+// ---------- Premium: next 18 hours in 6-hour blocks ----------
+
+@Composable
+internal fun BlocksCard(blocks: List<WindowForecast>, lang: Lang) {
+    val en = lang == Lang.EN
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(CardNavy)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 6.dp)) {
+            Icon(Icons.Rounded.Schedule, null, tint = Teal, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (en) "Next ${blocks.size * 6} hours" else "Susunod na ${blocks.size * 6} oras",
+                fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        }
+        blocks.forEachIndexed { i, f ->
+            if (i > 0) HorizontalDivider(color = Color.White.copy(alpha = 0.06f))
+            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(skyIcon(f), null, tint = rainColor(f.rainChancePct), modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(periodLabel(f, partial = false, en = en), fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(Recommender.recommend(f).first().short(lang), color = Muted, fontSize = 12.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.width(8.dp))
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("${f.rainChancePct}%", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = rainColor(f.rainChancePct))
+                    Text("${f.tempMinC}–${f.tempMaxC}°", color = Muted, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+// ---------- Upgrade / premium preview ----------
+
+@Composable
+private fun PremiumCard(premium: Boolean, lang: Lang, onPreview: (Boolean) -> Unit) {
+    val en = lang == Lang.EN
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Brush.verticalGradient(listOf(Color(0xFF2A2340), CardNavy)))
+            .border(1.dp, Amber.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.WorkspacePremium, null, tint = Amber, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (premium) "Premium" else (if (en) "Go Premium" else "Mag-Premium"),
+                fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            if (!premium) Text("₱${Plan.MONTHLY.pricePhp}/" + (if (en) "mo" else "buwan"), color = Amber, fontWeight = FontWeight.SemiBold)
+        }
+        if (!premium) {
+            Perk(Icons.Rounded.Schedule, if (en) "6-hour forecast blocks" else "Ulat kada 6 na oras")
+            Perk(Icons.Rounded.RecordVoiceOver, if (en) "Alarm reads the forecast aloud" else "Binabasa ng alarm ang ulat")
+            Perk(Icons.Rounded.Block, if (en) "No ads" else "Walang ads")
+            Perk(Icons.Rounded.Campaign, if (en) "Soon: class & work suspensions" else "Malapit na: suspensyon ng klase at trabaho")
+            Perk(Icons.Rounded.Timeline, if (en) "Soon: hourly & current weather" else "Malapit na: kada oras at kasalukuyang panahon")
+            Text(
+                (if (en) "or ₱${Plan.ANNUAL.pricePhp}/year · ${Plan.ANNUAL.trialDays}-day free trial · save ₱${Entitlements.annualSavingsPhp()}"
+                 else "o ₱${Plan.ANNUAL.pricePhp}/taon · ${Plan.ANNUAL.trialDays} araw na libreng subok · tipid ₱${Entitlements.annualSavingsPhp()}"),
+                color = Muted, fontSize = 12.sp,
+            )
+        }
+        // Testing only, until Google Play Billing is connected.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.White.copy(alpha = 0.05f))
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(if (en) "Premium preview" else "Silipin ang Premium", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (en) "Testing only · no payment" else "Pang-test lang · walang bayad", color = Muted, fontSize = 11.sp)
+            }
+            Switch(
+                checked = premium,
+                onCheckedChange = onPreview,
+                colors = SwitchDefaults.colors(checkedThumbColor = Navy, checkedTrackColor = Amber),
+            )
+        }
+    }
+}
+
+@Composable
+private fun Perk(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = Amber, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(text, fontSize = 14.sp)
     }
 }
 
@@ -519,18 +649,8 @@ private fun ErrorCard(message: String, en: Boolean, onRetry: () -> Unit) {
 
 // ---------- Mapping helpers ----------
 
-private fun periodLabel(f: WindowForecast, partial: Boolean, en: Boolean): String {
-    val today = java.time.LocalDate.now(ph.weatherapp.core.engine.MANILA)
-    val startDay = f.window.start.toLocalDate()
-    return if (f.window.kind == WindowKind.DAY) {
-        val day = if (startDay == today) (if (en) "Today" else "Ngayon") else (if (en) "Tomorrow" else "Bukas")
-        day + if (partial) (if (en) " · until 6 PM" else " · hanggang 6 PM") else " · 6 AM–6 PM"
-    } else {
-        // A night that started yesterday evening is still "tonight" after midnight.
-        val night = if (startDay <= today) (if (en) "Tonight" else "Ngayong gabi") else (if (en) "Tomorrow night" else "Bukas ng gabi")
-        night + if (partial) (if (en) " · until 6 AM" else " · hanggang 6 AM") else " · 6 PM–6 AM"
-    }
-}
+private fun periodLabel(f: WindowForecast, partial: Boolean, en: Boolean): String =
+    Periods.label(f.window, if (en) Lang.EN else Lang.FIL, partial, java.time.LocalDate.now(ph.weatherapp.core.engine.MANILA))
 
 /** The first official-warning item (Signal, rainfall warning, thunderstorm), if any. */
 internal fun urgentWarning(vararg fs: WindowForecast?): Recommendation? =

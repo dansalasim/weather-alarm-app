@@ -40,13 +40,17 @@ object WeatherRepository {
     private const val MAX_CACHE_AGE_HOURS = 36L
 
     data class Forecasts(
-        val current: WindowForecast?,     // first card (the window now, or the one about to start)
-        val next: WindowForecast?,        // second card
-        val currentIsPartial: Boolean,    // first window already started → "until 6 PM"
+        val windows: List<WindowForecast>, // free: two 12-hour windows; premium: four 6-hour blocks
+        val sixHour: Boolean,
+        val currentIsPartial: Boolean,     // first window already started → "until 6 PM"
         val failures: List<String>,
-        val fetchedAt: ZonedDateTime,     // when the oldest data used was downloaded
+        val fetchedAt: ZonedDateTime,      // when the oldest data used was downloaded
         val fromCache: Boolean,
-    )
+    ) {
+        val current: WindowForecast? get() = windows.getOrNull(0)
+        val next: WindowForecast? get() = windows.getOrNull(1)
+        val later: List<WindowForecast> get() = windows.drop(1)
+    }
 
     /**
      * Downloads fresh data (falling back to the saved copy per source) and computes the forecast.
@@ -94,6 +98,7 @@ object WeatherRepository {
                 sources = sources,
                 feed = PagasaFeedJson.parse(AREA_ID, reg.json, ht.json, now),
                 forAlarm = forAlarm,
+                sixHour = Premium.isActive(context),
                 failures = failures,
                 fetchedAt = oldest.atZone(MANILA),
                 fromCache = used.none { it.live },
@@ -116,6 +121,7 @@ object WeatherRepository {
             sources = sources,
             feed = PagasaFeedJson.parse(AREA_ID, reg?.readText(), ht?.readText(), now),
             forAlarm = forAlarm,
+            sixHour = Premium.isActive(context),
             failures = emptyList(),
             fetchedAt = Instant.ofEpochMilli(oldest).atZone(MANILA),
             fromCache = true,
@@ -127,19 +133,33 @@ object WeatherRepository {
         sources: List<SourceForecast>,
         feed: PagasaFeed,
         forAlarm: Boolean,
+        sixHour: Boolean,
         failures: List<String>,
         fetchedAt: ZonedDateTime,
         fromCache: Boolean,
     ): Forecasts {
-        val (first, second) = if (forAlarm) Windows.forAlarm(now) else Windows.current(now).let { it to Windows.next(it) }
+        val plan: List<ForecastWindow> = when {
+            sixHour && forAlarm -> Windows.blocks6ForAlarm(now)
+            sixHour -> Windows.blocks6(now)
+            forAlarm -> Windows.forAlarm(now).toList()
+            else -> Windows.current(now).let { listOf(it, Windows.next(it)) }
+        }
         // A window that has already started only counts the hours still ahead.
+        val first = plan.first()
         val thisHour = now.truncatedTo(ChronoUnit.HOURS)
         val partial = thisHour.isAfter(first.start) && thisHour.isBefore(first.end)
-        val firstClipped = if (partial) ForecastWindow(first.kind, thisHour, first.end) else first
-        val engineFirst = Consolidator(Consolidator.Config(minHoursPerSource = 1))
+        val windows = plan.mapIndexed { i, w ->
+            if (i == 0 && partial) ForecastWindow(w.kind, thisHour, w.end) else w
+        }
+        val forecasts = windows.mapIndexedNotNull { i, w ->
+            // The (possibly shortened) first window accepts sources with at least one hour in it.
+            val engine = if (i == 0) Consolidator(Consolidator.Config(minHoursPerSource = 1))
+                         else Consolidator(Consolidator.Config(minHoursPerSource = if (sixHour) 3 else 6))
+            engine.consolidate(w, sources, feed.toAdvisory(w))
+        }
         return Forecasts(
-            current = engineFirst.consolidate(firstClipped, sources, feed.toAdvisory(firstClipped)),
-            next = Consolidator().consolidate(second, sources, feed.toAdvisory(second)),
+            windows = forecasts,
+            sixHour = sixHour,
             currentIsPartial = partial,
             failures = failures,
             fetchedAt = fetchedAt,

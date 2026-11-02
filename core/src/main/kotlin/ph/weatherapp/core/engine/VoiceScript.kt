@@ -1,43 +1,47 @@
 package ph.weatherapp.core.engine
 
 import ph.weatherapp.core.model.*
+import java.time.ZonedDateTime
 
 /**
- * Builds the sentence Android TextToSpeech reads when the alarm rings (premium).
+ * Builds the sentence Android TextToSpeech reads after the alarm is dismissed (premium).
  * Kept short: the user is half-awake.
  */
 object VoiceScript {
 
-    fun build(main: WindowForecast, preview: WindowForecast?, recs: List<Recommendation>, lang: Lang): String {
+    fun build(
+        main: WindowForecast,
+        preview: WindowForecast?,
+        recs: List<Recommendation>,
+        lang: Lang,
+        now: ZonedDateTime = ZonedDateTime.now(MANILA),
+    ): String {
+        val en = lang == Lang.EN
         val sb = StringBuilder()
-        val period = periodName(main.window.kind, lang)
-        if (lang == Lang.EN) {
-            sb.append("Good ${greeting(main)}. For $period: ")
+        val greeting = when (now.hour) {
+            in 0..11 -> if (en) "Good morning" else "Magandang umaga"
+            in 12..17 -> if (en) "Good afternoon" else "Magandang hapon"
+            else -> if (en) "Good evening" else "Magandang gabi"
+        }
+        sb.append(greeting).append(". ")
+        if (en) {
+            sb.append("For ${Periods.spoken(main.window, lang)}: ")
             sb.append("${main.rainChancePct} percent chance of rain, ")
             sb.append("${main.tempMinC} to ${main.tempMaxC} degrees. ")
         } else {
-            sb.append("Magandang ${greeting(main, Lang.FIL)}. Para sa $period: ")
+            sb.append("Para sa ${Periods.spoken(main.window, lang)}: ")
             sb.append("${main.rainChancePct} porsyentong tsansa ng ulan, ")
             sb.append("${main.tempMinC} hanggang ${main.tempMaxC} degrees. ")
         }
         recs.take(2).forEach { sb.append(it.text(lang)).append(' ') }
         preview?.let {
-            val later = periodName(it.window.kind, lang)
-            sb.append(if (lang == Lang.EN) "Later, $later: ${it.rainChancePct} percent chance of rain."
+            val later = Periods.spoken(it.window, lang)
+            sb.append(if (en) "Later, $later: ${it.rainChancePct} percent chance of rain."
                       else "Mamaya, $later: ${it.rainChancePct} porsyentong tsansa ng ulan.")
         }
         return sb.toString()
             .replace("°C", " degrees")
-            .replace(Regex("\\((\\d+)%\\)"), "")   // drop "(60%)": the number was already spoken
+            .replace(Regex("\\((\\d+)%\\)"), "")
             .replace(Regex("\\s+"), " ").replace(" .", ".").trim()
     }
-
-    private fun periodName(k: WindowKind, lang: Lang) = when (k) {
-        WindowKind.DAY -> if (lang == Lang.EN) "today, 6 AM to 6 PM" else "ngayong araw, alas-sais ng umaga hanggang alas-sais ng gabi"
-        WindowKind.NIGHT -> if (lang == Lang.EN) "tonight, 6 PM to 6 AM" else "ngayong gabi, alas-sais ng gabi hanggang alas-sais ng umaga"
-    }
-
-    private fun greeting(f: WindowForecast, lang: Lang = Lang.EN) =
-        if (f.window.kind == WindowKind.DAY) (if (lang == Lang.EN) "morning" else "umaga")
-        else (if (lang == Lang.EN) "evening" else "gabi")
 }

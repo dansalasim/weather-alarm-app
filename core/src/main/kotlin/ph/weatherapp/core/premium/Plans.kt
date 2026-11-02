@@ -1,31 +1,41 @@
 package ph.weatherapp.core.premium
 
 /**
- * Subscription plans. Product IDs must match the ones you create in
+ * Subscription plans. Product IDs must match the ones created in
  * Google Play Console → Monetize → Subscriptions.
  */
 enum class Plan(val productId: String, val pricePhp: Int, val trialDays: Int) {
-    MONTHLY("premium_monthly", 99, 0),
-    ANNUAL("premium_annual", 949, 7),     // 12 × ₱99 = ₱1,188 less 20% ≈ ₱949
+    MONTHLY("premium_monthly", 49, 0),
+    ANNUAL("premium_annual", 500, 7),     // ≈ ₱42/month, about 15% off 12 × ₱49
 }
 
 enum class Feature {
-    // Free for everyone — PAGASA warnings are never paywalled
-    DAY_NIGHT_FORECAST, TWO_ALARMS, RECOMMENDATIONS, PAGASA_WARNINGS,
+    // Free
+    TWELVE_HOUR_FORECAST, ALARMS, RECOMMENDATIONS, PAGASA_WARNINGS, BANNER_ADS,
     // Premium
-    VOICE_READOUT, UNLIMITED_ALARMS, MULTIPLE_LOCATIONS, RAIN_SOON_ALERT, THREE_DAY_OUTLOOK, NO_ADS,
+    SIX_HOUR_FORECAST, VOICE_READOUT, NO_ADS,
+    // Premium, coming later
+    SUSPENSION_ALERTS, HOURLY_AND_CURRENT,
 }
 
 object Entitlements {
     private val FREE = setOf(
-        Feature.DAY_NIGHT_FORECAST, Feature.TWO_ALARMS,
-        Feature.RECOMMENDATIONS, Feature.PAGASA_WARNINGS,
+        Feature.TWELVE_HOUR_FORECAST, Feature.ALARMS, Feature.RECOMMENDATIONS,
+        Feature.PAGASA_WARNINGS, Feature.BANNER_ADS,
     )
+    private val PREMIUM = setOf(
+        Feature.SIX_HOUR_FORECAST, Feature.ALARMS, Feature.RECOMMENDATIONS,
+        Feature.PAGASA_WARNINGS, Feature.VOICE_READOUT, Feature.NO_ADS,
+        Feature.SUSPENSION_ALERTS, Feature.HOURLY_AND_CURRENT,
+    )
+    val COMING_SOON = setOf(Feature.SUSPENSION_ALERTS, Feature.HOURLY_AND_CURRENT)
 
-    fun has(feature: Feature, isPremium: Boolean): Boolean = isPremium || feature in FREE
+    /** PAGASA warnings stay free for everyone. */
+    fun has(feature: Feature, isPremium: Boolean): Boolean =
+        feature in (if (isPremium) PREMIUM else FREE) && feature !in COMING_SOON
 
-    fun maxAlarms(isPremium: Boolean): Int = if (isPremium) Int.MAX_VALUE else 2
+    fun maxAlarms(@Suppress("UNUSED_PARAMETER") isPremium: Boolean): Int = 2
 
-    /** Paywall line: "Save ₱239 a year". */
+    /** Paywall line: "Save ₱88 a year". */
     fun annualSavingsPhp(): Int = Plan.MONTHLY.pricePhp * 12 - Plan.ANNUAL.pricePhp
 }

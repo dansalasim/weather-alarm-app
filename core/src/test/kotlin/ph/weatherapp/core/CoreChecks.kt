@@ -83,7 +83,28 @@ fun main() {
     check("voice script mentions rain chance", en.contains("60 percent") && fil.contains("60 porsyento"))
 
     // --- Premium ---
-    check("annual saves ₱239", Entitlements.annualSavingsPhp() == 239)
+    check("annual ₱500 saves ₱88 vs 12 × ₱49", Entitlements.annualSavingsPhp() == 88)
+    check("voice is premium only", !Entitlements.has(ph.weatherapp.core.premium.Feature.VOICE_READOUT, false) &&
+        Entitlements.has(ph.weatherapp.core.premium.Feature.VOICE_READOUT, true))
+    check("suspension alerts not live yet", !Entitlements.has(ph.weatherapp.core.premium.Feature.SUSPENSION_ALERTS, true))
+
+    // --- 6-hour blocks (premium) ---
+    val b = Windows.blocks6(t(3, 14))
+    check("2 PM → afternoon block 12–6 PM first", b[0].start == t(3, 12) && b[0].end == t(3, 18) && b[0].kind == WindowKind.DAY)
+    check("then evening, overnight, morning", b[1].start == t(3, 18) && b[2].start == t(4, 0) && b[3].start == t(4, 6))
+    check("evening and overnight are NIGHT", b[1].kind == WindowKind.NIGHT && b[2].kind == WindowKind.NIGHT && b[3].kind == WindowKind.DAY)
+    check("5:30 AM alarm skips to the morning block", Windows.blocks6ForAlarm(t(3, 5).plusMinutes(30))[0].start == t(3, 6))
+    check("4 AM alarm keeps the overnight block", Windows.blocks6ForAlarm(t(3, 4))[0].start == t(3, 0))
+    val today3 = java.time.LocalDate.of(2026, 11, 3)
+    check("label: Morning · 6 AM–12 PM", Periods.label(b[3].copy(start = t(3, 6), end = t(3, 12)), Lang.EN, false, today3) == "Morning · 6 AM–12 PM")
+    check("label: Tomorrow morning", Periods.label(b[3], Lang.EN, false, today3) == "Tomorrow morning · 6 AM–12 PM")
+    check("label: partial afternoon", Periods.label(b[0], Lang.EN, true, today3) == "Afternoon · until 6 PM")
+    check("label FIL: Gabi", Periods.label(b[1], Lang.FIL, false, today3) == "Gabi · 6 PM–12 AM")
+    val morningForecast = Consolidator().consolidate(ForecastWindow(WindowKind.DAY, t(3, 6), t(3, 12)),
+        listOf(source("a", 50, 30.0, 8.0), source("b", 55, 30.0, 8.0)), null)!!
+    check("6-hour block consolidates (6 points per source)", morningForecast.sourcesUsed.size == 2)
+    val v6 = VoiceScript.build(morningForecast, null, Recommender.recommend(morningForecast), Lang.EN, t(3, 5))
+    check("voice names the block", v6.contains("this morning, 6 AM to 12 noon") && v6.startsWith("Good morning"))
 
     println(if (failures == 0) "\nAll checks passed." else "\n$failures check(s) failed.")
     if (failures > 0) kotlin.system.exitProcess(1)
