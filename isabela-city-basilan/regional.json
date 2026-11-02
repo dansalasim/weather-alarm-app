@@ -1,0 +1,24 @@
+{
+  "part": "regional",
+  "areaId": "isabela-city-basilan",
+  "source": "DOST-PAGASA Mindanao PRSD Regional Forecast",
+  "issuedAt": "2026-11-02T05:00:00+08:00",
+  "validUntil": "2026-11-03T05:00:00+08:00",
+  "latestAvailable": false,
+  "skyCondition": "Partly cloudy skies to at times cloudy with rainshowers or thunderstorm",
+  "tempMinC": 25,
+  "tempMaxC": 34,
+  "tonightSkyCondition": "Partly cloudy skies to at times cloudy with rainshowers or thunderstorm",
+  "tonightMinC": 25,
+  "tonightMaxC": 33,
+  "winds": "Light to Moderate (Northeast to East)",
+  "coastalWaters": "Slight to Moderate (0.6 to 2.5 meters)",
+  "synopsis": null,
+  "warnings": {
+    "tcwsLevel": null,
+    "rainfallWarning": null,
+    "thunderstormAdvisory": false,
+    "validUntil": null,
+    "text": null
+  }
+}
