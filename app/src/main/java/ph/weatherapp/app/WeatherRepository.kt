@@ -1,6 +1,8 @@
 package ph.weatherapp.app
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import ph.weatherapp.core.engine.Consolidator
 import ph.weatherapp.core.engine.MANILA
@@ -28,7 +30,7 @@ object WeatherRepository {
     private const val AREA_ID = "isabela-city-basilan"
     private const val FEED_BASE = "https://raw.githubusercontent.com/dansalasim/weather-alarm-app/feed/$AREA_ID/"
 
-    data class Result(
+    data class Forecasts(
         val current: WindowForecast?,
         val next: WindowForecast?,
         val currentIsPartial: Boolean,
@@ -36,17 +38,20 @@ object WeatherRepository {
         val fetchedAt: ZonedDateTime,
     )
 
-    suspend fun load(): Result = withContext(Dispatchers.IO) {
+    suspend fun load(): Forecasts = withContext(Dispatchers.IO) {
         val now = ZonedDateTime.now(MANILA)
-        val sources = mutableListOf<SourceForecast>()
-        val failures = mutableListOf<String>()
-        for (s in ALL_SOURCES) {
-            try {
-                sources += s.parse(httpGet(s.url(LAT, LON)), now)
-            } catch (e: Exception) {
-                failures += "${s.id}: ${e.message ?: e.javaClass.simpleName}"
+        // Fetch all sources at the same time; a failed source is skipped, not fatal.
+        val results = ALL_SOURCES.map { s ->
+            async {
+                try {
+                    Result.success(s.parse(httpGet(s.url(LAT, LON)), now))
+                } catch (e: Exception) {
+                    Result.failure<SourceForecast>(IOException("${s.id}: ${e.message ?: e.javaClass.simpleName}"))
+                }
             }
-        }
+        }.awaitAll()
+        val sources = results.mapNotNull { it.getOrNull() }.toMutableList()
+        val failures = results.mapNotNull { it.exceptionOrNull()?.message }.toMutableList()
         if (sources.isEmpty()) throw IOException("No weather source could be reached. Check your internet connection.")
 
         // PAGASA feed published each morning by the CDRRMO tasks. Optional: the app still works without it.
@@ -63,7 +68,7 @@ object WeatherRepository {
         val next = Windows.next(cur)
         val engine = Consolidator(Consolidator.Config(minHoursPerSource = 1))
 
-        Result(
+        Forecasts(
             current = engine.consolidate(remaining, sources, feed.toAdvisory(remaining)),
             next = Consolidator().consolidate(next, sources, feed.toAdvisory(next)),
             currentIsPartial = partial,

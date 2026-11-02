@@ -53,6 +53,29 @@ fun main() {
     expect("day rain chance = median of 65 and 70", f.rainChancePct == 68)
     println("   Day forecast: rain ${f.rainChancePct}%, ${f.tempMinC}–${f.tempMaxC}°C, wind ${f.windMaxKph} km/h, HI ${f.heatIndexMaxC}°C, ${f.confidence}")
 
+    // --- Ensemble (ECMWF/GFS shape): control + members; rain chance = share of wet runs ---
+    val ensHours = (0 until 12).map { "\"2026-11-02T%02d:00\"".format(6 + it) }
+    fun runArr(wet: Boolean) = (0 until 12).joinToString(",") { if (wet && it in 6..8) "1.2" else "0.0" }
+    // control + 9 members: 3 runs wet in hours 12–14 → 30%
+    val runs = (0 until 10).joinToString(",") { m ->
+        val key = if (m == 0) "precipitation" else "precipitation_member%02d".format(m)
+        "\"$key\":[${runArr(m < 3)}]"
+    }
+    val ens = """{"hourly":{"time":[${ensHours.joinToString(",")}],$runs,
+        "temperature_2m":[${(0 until 12).joinToString(",") { "29.5" }}],
+        "temperature_2m_member01":[${(0 until 12).joinToString(",") { "40.0" }}],
+        "relative_humidity_2m":[${(0 until 12).joinToString(",") { "80" }}],
+        "wind_speed_10m":[${(0 until 12).joinToString(",") { "9.0" }}]}}"""
+    val e = EcmwfEnsemble.parse(ens, now)
+    expect("ensemble: 12 points from 6 AM", e.points.size == 12 && e.points[0].time.hour == 6)
+    expect("ensemble: dry hour → 0%", e.points[0].rainChancePct == 0)
+    expect("ensemble: 3 of 10 runs wet → 30%", e.points[7].rainChancePct == 30)
+    expect("ensemble: temperature from control run, not members", e.points[0].tempC == 29.5)
+    expect("ensemble: missing gusts stay empty", e.points[0].gustKph == null && e.points[0].windKph == 9.0)
+    expect("four sources registered", ALL_SOURCES.map { it.id } == listOf("ecmwf", "gfs", "open-meteo", "met-norway"))
+    expect("ECMWF URL uses the ensemble API", EcmwfEnsemble.url(6.7, 121.98).contains("ensemble-api.open-meteo.com") &&
+        EcmwfEnsemble.url(6.7, 121.98).contains("models=ecmwf_ifs025"))
+
     println(if (bad == 0) "\nAll source checks passed." else "\n$bad source check(s) failed.")
     if (bad > 0) kotlin.system.exitProcess(1)
 }

@@ -85,7 +85,54 @@ object MetNorway : WeatherSource {
     }
 }
 
-val ALL_SOURCES: List<WeatherSource> = listOf(OpenMeteo, MetNorway)
+/**
+ * A global model's ENSEMBLE via Open-Meteo: the model is run many times with slightly different
+ * starting conditions. Rain chance = share of runs with at least [rainThresholdMm] of rain that hour.
+ * Temperature, humidity and wind come from the control run.
+ * These are the same models Windy displays (ECMWF is Windy's default).
+ */
+class OpenMeteoEnsemble(
+    override val id: String,
+    private val model: String,
+    private val rainThresholdMm: Double = 0.1,
+) : WeatherSource {
+
+    override fun url(lat: Double, lon: Double) =
+        "https://ensemble-api.open-meteo.com/v1/ensemble?latitude=$lat&longitude=$lon&models=$model" +
+            "&hourly=precipitation,temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m" +
+            "&wind_speed_unit=kmh&timezone=Asia%2FManila&forecast_days=3"
+
+    override fun parse(json: String, fetchedAt: ZonedDateTime): SourceForecast {
+        val hourly = Json.parseToJsonElement(json).jsonObject["hourly"]?.jsonObject
+            ?: error("$id: no 'hourly' block")
+        val times = hourly.arr("time").map { LocalDateTime.parse(it.jsonPrimitive.content).atZone(MANILA) }
+        // "precipitation" (control) plus "precipitation_member01" … "precipitation_memberNN"
+        val precipRuns = hourly.keys.filter { it == "precipitation" || it.startsWith("precipitation_member") }
+            .map { hourly.arr(it) }
+        val temp = hourly.arr("temperature_2m")
+        val hum = hourly.arr("relative_humidity_2m")
+        val wind = hourly.arr("wind_speed_10m")
+        val gust = hourly.arr("wind_gusts_10m")
+        val points = times.indices.map { i ->
+            val values = precipRuns.mapNotNull { it.num(i) }
+            HourlyPoint(
+                time = times[i],
+                rainChancePct = if (values.isEmpty()) null
+                    else Math.round(100.0 * values.count { it >= rainThresholdMm } / values.size).toInt(),
+                tempC = temp.num(i),
+                windKph = wind.num(i),
+                gustKph = gust.num(i),
+                humidityPct = hum.num(i)?.toInt(),
+            )
+        }
+        return SourceForecast(id, fetchedAt, points)
+    }
+}
+
+val EcmwfEnsemble = OpenMeteoEnsemble("ecmwf", "ecmwf_ifs025")
+val GfsEnsemble = OpenMeteoEnsemble("gfs", "gfs025")
+
+val ALL_SOURCES: List<WeatherSource> = listOf(EcmwfEnsemble, GfsEnsemble, OpenMeteo, MetNorway)
 
 private fun JsonObject.arr(k: String): JsonArray = this[k]?.jsonArray ?: JsonArray(emptyList())
 private fun JsonArray.num(i: Int): Double? = getOrNull(i)?.let { if (it is JsonNull) null else it.jsonPrimitive.doubleOrNull }

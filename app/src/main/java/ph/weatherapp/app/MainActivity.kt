@@ -73,7 +73,7 @@ fun AppTheme(content: @Composable () -> Unit) {
 
 private sealed interface UiState {
     data object Loading : UiState
-    data class Ready(val r: WeatherRepository.Result) : UiState
+    data class Ready(val r: WeatherRepository.Forecasts) : UiState
     data class Failed(val message: String) : UiState
 }
 
@@ -135,7 +135,7 @@ fun ForecastScreen() {
                 r.next?.let { NextCard(it, lang) }
 
                 Text(
-                    "DOST-PAGASA · Open-Meteo · MET Norway (CC BY 4.0)" +
+                    "DOST-PAGASA · ECMWF · GFS · Open-Meteo · MET Norway (CC BY 4.0)" +
                         if (r.failures.isNotEmpty()) "\nNot reached: " + r.failures.joinToString(", ") { it.substringBefore(":") } else "",
                     color = Faint, fontSize = 10.sp, lineHeight = 13.sp,
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
