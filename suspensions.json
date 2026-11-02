@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-02T15:42:15+08:00",
+  "updatedAt": "2026-11-02T15:50:42+08:00",
   "announcements": [
     {
       "id": "isabela-city-basilan-2026-11-02-1",
@@ -17,6 +17,23 @@
       "sourceUrl": null,
       "postedAt": "2026-11-02T15:42:15+08:00",
       "issue": "https://github.com/dansalasim/weather-alarm-app/issues/1"
+    },
+    {
+      "id": "zamboanga-city-2026-11-02-2",
+      "areaId": "zamboanga-city",
+      "date": "2026-11-02",
+      "classes": true,
+      "work": false,
+      "levels": [
+        "All levels"
+      ],
+      "sector": "Public and private",
+      "period": "Whole day",
+      "details": null,
+      "source": "City Government of Zamboanga",
+      "sourceUrl": null,
+      "postedAt": "2026-11-02T15:50:42+08:00",
+      "issue": "https://github.com/dansalasim/weather-alarm-app/issues/2"
     }
   ]
 }
