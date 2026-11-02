@@ -85,7 +85,7 @@ class Speaker(ctx: Context) {
 
     /** [script] builds the text for the language actually used (English if no Filipino voice is installed). */
     fun speak(lang: Lang, script: (Lang) -> String, whenDone: () -> Unit) {
-        val go = {
+        val go: () -> Unit = {
             if (!ready) whenDone() else {
                 val useLang = if (lang == Lang.FIL && canSpeakFilipino()) Lang.FIL else Lang.EN
                 tts.language = if (useLang == Lang.FIL) Locale("fil", "PH") else Locale.US
