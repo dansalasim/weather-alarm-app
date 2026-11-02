@@ -56,7 +56,7 @@ object OpenMeteo : WeatherSource {
 object MetNorway : WeatherSource {
     override val id = "met-norway"
     /** MET Norway blocks requests without an identifying User-Agent. */
-    const val USER_AGENT = "WeatherAlarmApp/0.1 github.com/dansalasim/weather-alarm-app"
+    const val USER_AGENT = "WeatherAlarmPH/0.1 github.com/dansalasim/weather-alarm-app"
 
     override fun url(lat: Double, lon: Double) =
         "https://api.met.no/weatherapi/locationforecast/2.0/complete?lat=${"%.4f".format(lat)}&lon=${"%.4f".format(lon)}"

@@ -1,4 +1,4 @@
-# Weather Alarm (working name)
+# Weather Alarm PH
 
 An Android weather app for students, teachers and workers in the Philippines:
 a 12-hour day (6 AM–6 PM) and night (6 PM–6 AM) forecast built from several free
@@ -11,6 +11,7 @@ sources, with **PAGASA prevailing** when sources disagree, practical advice
 | `core/` | Pure Kotlin forecast engine: day/night windows, source consolidation, PAGASA rules, recommendations, voice script, premium plans, source readers. See `core/ENGINE.md`. |
 | `app/` | The Android app (Jetpack Compose). |
 | `.github/workflows/build.yml` | Builds a test APK in the cloud on every push. |
+| `PRIVACY.md` | Privacy policy (linked in the app and for the Play Store listing). |
 | `keystore/debug.keystore` | Fixed **debug-only** key so test APKs install over each other. Never used for the Play Store. |
 
 ## Getting the test APK

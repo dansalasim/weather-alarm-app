@@ -210,7 +210,7 @@ object AlarmNotifier {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val n = NotificationCompat.Builder(ctx, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(ph.weatherapp.app.R.drawable.ic_stat_umbrella)
             .setContentTitle(a.label(lang) + " · " + ZonedDateTime.now(MANILA).format(DateTimeFormatter.ofPattern("h:mm a")))
             .setContentText(summary)
             .setStyle(NotificationCompat.BigTextStyle().bigText(summary))

@@ -234,6 +234,17 @@ fun ForecastScreen(resumes: Int) {
                 AlarmsSection(lang, resumes)
                 PremiumCard(premium, lang) { setPremium(it) }
 
+                val uiCtx = LocalContext.current
+                Text(
+                    if (en) "Privacy policy" else "Patakaran sa privacy",
+                    color = Teal.copy(alpha = 0.8f), fontSize = 11.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable {
+                        runCatching {
+                            uiCtx.startActivity(Intent(Intent.ACTION_VIEW,
+                                Uri.parse("https://github.com/dansalasim/weather-alarm-app/blob/main/PRIVACY.md")))
+                        }
+                    }.padding(vertical = 2.dp),
+                )
                 Text(
                     "DOST-PAGASA · ECMWF · GFS · Open-Meteo · MET Norway (CC BY 4.0)" +
                         (if (r.fromCache) "\n" + (if (en) "Offline · saved " else "Offline · naka-save ") +
