@@ -100,7 +100,14 @@ fun main() {
     check("label: Tomorrow morning", Periods.label(b[3], Lang.EN, false, today3) == "Tomorrow morning · 6 AM–12 PM")
     check("label: partial afternoon", Periods.label(b[0], Lang.EN, true, today3) == "Afternoon · until 6 PM")
     check("label FIL: Gabi", Periods.label(b[1], Lang.FIL, false, today3) == "Gabi · 6 PM–12 AM")
-    val morningForecast = Consolidator().consolidate(ForecastWindow(WindowKind.DAY, t(3, 6), t(3, 12)),
+    // In-progress block at 5 PM keeps its own name (regression: was "Overnight")
+    val afternoonAt5 = b[0].copy(start = t(3, 17))
+    check("5 PM partial block → Hapon · hanggang 6 PM", Periods.label(afternoonAt5, Lang.FIL, true, today3) == "Hapon · hanggang 6 PM")
+    check("5 PM partial block spoken → this afternoon", Periods.spoken(afternoonAt5, Lang.EN).startsWith("this afternoon"))
+    // A shortened 12-hour window (free) is still a 12-hour window, not a block
+    val dayAt2 = Windows.current(t(3, 14)).copy(start = t(3, 14))
+    check("free 2 PM window → Today · until 6 PM", Periods.label(dayAt2, Lang.EN, true, today3) == "Today · until 6 PM")
+    val morningForecast = Consolidator().consolidate(ForecastWindow(WindowKind.DAY, t(3, 6), t(3, 12), sixHour = true),
         listOf(source("a", 50, 30.0, 8.0), source("b", 55, 30.0, 8.0)), null)!!
     check("6-hour block consolidates (6 points per source)", morningForecast.sourcesUsed.size == 2)
     val v6 = VoiceScript.build(morningForecast, null, Recommender.recommend(morningForecast), Lang.EN, t(3, 5))

@@ -664,8 +664,6 @@ internal fun HeroCard(f: WindowForecast, lang: Lang, partial: Boolean) {
                 icon = if (isDay) Icons.Rounded.WbSunny else Icons.Rounded.NightsStay,
                 text = periodLabel(f, partial = partial, en = en),
             )
-            Spacer(Modifier.weight(1f))
-            ConfidenceDot(f.confidence, en)
         }
 
         // Big rain chance + glyph
@@ -673,6 +671,8 @@ internal fun HeroCard(f: WindowForecast, lang: Lang, partial: Boolean) {
             Column(Modifier.weight(1f)) {
                 Text("${f.rainChancePct}%", fontSize = 60.sp, fontWeight = FontWeight.Bold, lineHeight = 62.sp)
                 Text(rainLabel(f.rainChancePct, en), color = rainColor(f.rainChancePct), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(6.dp))
+                ConfidenceDot(f.confidence, en)
             }
             Icon(
                 skyIcon(f), null,
@@ -722,8 +722,6 @@ internal fun NextCard(f: WindowForecast, lang: Lang, partial: Boolean = false, a
                 icon = if (isDay) Icons.Rounded.WbSunny else Icons.Rounded.NightsStay,
                 text = periodLabel(f, partial = partial, en = en),
             )
-            Spacer(Modifier.weight(1f))
-            ConfidenceDot(f.confidence, en)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(skyIcon(f), null, tint = rainColor(f.rainChancePct), modifier = Modifier.size(36.dp))
@@ -731,6 +729,8 @@ internal fun NextCard(f: WindowForecast, lang: Lang, partial: Boolean = false, a
             Column(Modifier.weight(1f)) {
                 Text("${f.rainChancePct}%", fontSize = 26.sp, fontWeight = FontWeight.Bold)
                 Text(rainLabel(f.rainChancePct, en), color = Muted, fontSize = 12.sp)
+                Spacer(Modifier.height(4.dp))
+                ConfidenceDot(f.confidence, en)
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text("${f.tempMinC}–${f.tempMaxC}°C", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
@@ -752,7 +752,7 @@ private fun Pill(icon: ImageVector, text: String) {
     ) {
         Icon(icon, null, tint = Teal, modifier = Modifier.size(14.dp))
         Spacer(Modifier.width(6.dp))
-        Text(text, color = Teal, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Text(text, color = Teal, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -766,7 +766,7 @@ private fun ConfidenceDot(c: Confidence, en: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(7.dp).background(color, CircleShape))
         Spacer(Modifier.width(6.dp))
-        Text(label, color = Muted, fontSize = 11.sp)
+        Text(label, color = Muted, fontSize = 11.sp, maxLines = 1, softWrap = false)
     }
 }
 

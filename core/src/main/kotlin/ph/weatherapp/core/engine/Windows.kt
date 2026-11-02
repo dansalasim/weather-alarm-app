@@ -50,11 +50,11 @@ object Windows {
         val t = now.withZoneSameInstant(MANILA)
         val h = t.hour / 6 * 6
         val start = t.toLocalDate().atTime(h, 0).atZone(MANILA)
-        return ForecastWindow(kindOf6(h), start, start.plusHours(6))
+        return ForecastWindow(kindOf6(h), start, start.plusHours(6), sixHour = true)
     }
 
     fun nextBlock6(w: ForecastWindow): ForecastWindow =
-        ForecastWindow(kindOf6(w.end.hour), w.end, w.end.plusHours(6))
+        ForecastWindow(kindOf6(w.end.hour), w.end, w.end.plusHours(6), sixHour = true)
 
     /** [count] consecutive 6-hour blocks starting with the one containing [now] (4 = the next 24 hours). */
     fun blocks6(now: ZonedDateTime, count: Int = 4): List<ForecastWindow> =
@@ -74,7 +74,7 @@ object Windows {
 /** Names for windows, on screen and spoken. Works for 12-hour windows and 6-hour blocks. */
 object Periods {
 
-    private fun is6(w: ForecastWindow) = java.time.Duration.between(w.start, w.end).toHours() <= 6
+    private fun is6(w: ForecastWindow) = w.sixHour
 
     /** Short screen label, e.g. "Morning · 6 AM–12 PM", "Tomorrow · 6 AM–6 PM", "Tonight · until 6 AM". */
     fun label(w: ForecastWindow, lang: Lang, partial: Boolean, today: java.time.LocalDate): String {
@@ -82,7 +82,7 @@ object Periods {
         val startDay = w.start.toLocalDate()
         val endText = when (w.end.hour) { 0 -> if (en) "12 AM" else "12 AM"; 6 -> "6 AM"; 12 -> "12 PM"; else -> "6 PM" }
         if (is6(w)) {
-            val h = w.start.hour
+            val h = w.nominalStartHour
             val base = when (h) {
                 6 -> if (en) "Morning" else "Umaga"
                 12 -> if (en) "Afternoon" else "Hapon"
@@ -111,7 +111,7 @@ object Periods {
             WindowKind.DAY -> if (en) "today, 6 AM to 6 PM" else "ngayong araw, alas-sais ng umaga hanggang alas-sais ng gabi"
             WindowKind.NIGHT -> if (en) "tonight, 6 PM to 6 AM" else "ngayong gabi, alas-sais ng gabi hanggang alas-sais ng umaga"
         }
-        return when (w.start.hour) {
+        return when (w.nominalStartHour) {
             6 -> if (en) "this morning, 6 AM to 12 noon" else "ngayong umaga, alas-sais hanggang tanghali"
             12 -> if (en) "this afternoon, 12 noon to 6 PM" else "ngayong hapon, tanghali hanggang alas-sais ng gabi"
             18 -> if (en) "this evening, 6 PM to midnight" else "ngayong gabi, alas-sais hanggang hatinggabi"

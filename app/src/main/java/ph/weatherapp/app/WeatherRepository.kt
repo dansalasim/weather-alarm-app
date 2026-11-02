@@ -165,7 +165,7 @@ object WeatherRepository {
         val thisHour = now.truncatedTo(ChronoUnit.HOURS)
         val partial = thisHour.isAfter(first.start) && thisHour.isBefore(first.end)
         val windows = plan.mapIndexed { i, w ->
-            if (i == 0 && partial) ForecastWindow(w.kind, thisHour, w.end) else w
+            if (i == 0 && partial) w.copy(start = thisHour) else w
         }
         val forecasts = windows.mapIndexedNotNull { i, w ->
             // The (possibly shortened) first window accepts sources with at least one hour in it.

@@ -53,7 +53,11 @@ data class ForecastWindow(
     val kind: WindowKind,
     val start: ZonedDateTime,
     val end: ZonedDateTime,            // exclusive
-)
+    val sixHour: Boolean = false,      // premium 6-hour block (vs a 12-hour window)
+) {
+    /** Hour the full block/window starts at, even when [start] was moved forward to "now". */
+    val nominalStartHour: Int get() = end.minusHours(if (sixHour) 6 else 12).hour
+}
 
 enum class Confidence { HIGH, MEDIUM, LOW }
 
