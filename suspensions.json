@@ -1,4 +1,22 @@
 {
-  "updatedAt": "2026-11-02T15:45:00+08:00",
-  "announcements": []
+  "updatedAt": "2026-11-02T15:42:15+08:00",
+  "announcements": [
+    {
+      "id": "isabela-city-basilan-2026-11-02-1",
+      "areaId": "isabela-city-basilan",
+      "date": "2026-11-02",
+      "classes": true,
+      "work": false,
+      "levels": [
+        "All levels"
+      ],
+      "sector": "Public and private",
+      "period": "Whole day",
+      "details": null,
+      "source": "City government of isabela",
+      "sourceUrl": null,
+      "postedAt": "2026-11-02T15:42:15+08:00",
+      "issue": "https://github.com/dansalasim/weather-alarm-app/issues/1"
+    }
+  ]
 }
