@@ -1,0 +1,32 @@
+{
+ "total": 1642,
+ "with_coordinates": 1640,
+ "missing": [
+  "Pres. Manuel A. Roxas, Zamboanga del Norte",
+  "Sen. Ninoy Aquino, Sultan Kudarat"
+ ],
+ "quality": {
+  "om1": 25,
+  "om2": 1,
+  "om3": 1465,
+  "om3-far": 14,
+  "osm": 135
+ },
+ "far": [
+  "Aborlan, Palawan",
+  "Agutaya, Palawan",
+  "Balabac, Palawan",
+  "Bataraza, Palawan",
+  "Busuanga, Palawan",
+  "Cagayancillo, Palawan",
+  "Coron, Palawan",
+  "Cuyo, Palawan",
+  "Magsaysay, Palawan",
+  "Narra, Palawan",
+  "Quezon, Palawan",
+  "Culion, Palawan",
+  "Mapun, Tawi-Tawi",
+  "Turtle Islands, Tawi-Tawi"
+ ],
+ "outliers_retried": 14
+}
