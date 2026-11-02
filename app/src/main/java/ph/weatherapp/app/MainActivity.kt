@@ -1,6 +1,22 @@
 package ph.weatherapp.app
 
 import android.os.Bundle
+import android.Manifest
+import android.app.TimePickerDialog
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import ph.weatherapp.app.alarm.AlarmNotifier
+import ph.weatherapp.app.alarm.AlarmPrefs
+import ph.weatherapp.app.alarm.AlarmScheduler
+import ph.weatherapp.app.alarm.AlarmSpec
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -37,24 +53,34 @@ import ph.weatherapp.core.model.WindowKind
 import java.time.format.DateTimeFormatter
 
 class MainActivity : ComponentActivity() {
+    /** Bumped on every resume so permission status re-checks after returning from Settings. */
+    private val resumes = mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { AppTheme { ForecastScreen() } }
+        AlarmNotifier.ensureChannel(this)
+        AlarmScheduler.scheduleAll(this)
+        setContent { AppTheme { ForecastScreen(resumes.intValue) } }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        resumes.intValue++
     }
 }
 
 // ---------- Palette (navy + teal, like the CDRRMO infographics) ----------
 
-private val Navy = Color(0xFF0A1628)
-private val NavyTop = Color(0xFF15304F)
-private val CardNavy = Color(0xFF12233A)
-private val Tile = Color(0xFF1A2F4A)
-private val Teal = Color(0xFF4FD1C5)
-private val Amber = Color(0xFFFBBF24)
-private val Orange = Color(0xFFF97316)
-private val Red = Color(0xFFEF4444)
-private val Muted = Color(0xFF8DA2BA)
-private val Faint = Color(0xFF5B7090)
+internal val Navy = Color(0xFF0A1628)
+internal val NavyTop = Color(0xFF15304F)
+internal val CardNavy = Color(0xFF12233A)
+internal val Tile = Color(0xFF1A2F4A)
+internal val Teal = Color(0xFF4FD1C5)
+internal val Amber = Color(0xFFFBBF24)
+internal val Orange = Color(0xFFF97316)
+internal val Red = Color(0xFFEF4444)
+internal val Muted = Color(0xFF8DA2BA)
+internal val Faint = Color(0xFF5B7090)
 
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
@@ -78,19 +104,23 @@ private sealed interface UiState {
 }
 
 @Composable
-fun ForecastScreen() {
-    var state by remember { mutableStateOf<UiState>(UiState.Loading) }
-    var lang by remember { mutableStateOf(Lang.EN) }
+fun ForecastScreen(resumes: Int) {
+    val ctx = LocalContext.current.applicationContext
+    // Show the saved forecast instantly, then refresh from the internet.
+    var state by remember {
+        mutableStateOf<UiState>(WeatherRepository.loadCached(ctx, forAlarm = false)?.let { UiState.Ready(it) } ?: UiState.Loading)
+    }
+    var lang by remember { mutableStateOf(AlarmPrefs.lang(ctx)) }
     val scope = rememberCoroutineScope()
     val en = lang == Lang.EN
 
     fun refresh() {
         scope.launch {
-            state = UiState.Loading
+            if (state !is UiState.Ready) state = UiState.Loading
             state = try {
-                UiState.Ready(WeatherRepository.load())
+                UiState.Ready(WeatherRepository.load(ctx))
             } catch (e: Exception) {
-                UiState.Failed(e.message ?: "Something went wrong.")
+                (state as? UiState.Ready) ?: UiState.Failed(e.message ?: "Something went wrong.")
             }
         }
     }
@@ -114,7 +144,10 @@ fun ForecastScreen() {
                     ?.format(DateTimeFormatter.ofPattern("EEE, MMM d · h:mm a")) ?: "Basilan"
                 Text(sub, color = Muted, fontSize = 12.sp)
             }
-            HeaderButton(Icons.Rounded.Translate, if (en) "FIL" else "EN") { lang = if (en) Lang.FIL else Lang.EN }
+            HeaderButton(Icons.Rounded.Translate, if (en) "FIL" else "EN") {
+                lang = if (en) Lang.FIL else Lang.EN
+                AlarmPrefs.setLang(ctx, lang)
+            }
             Spacer(Modifier.width(8.dp))
             HeaderButton(Icons.Rounded.Refresh, null) { refresh() }
         }
@@ -126,22 +159,137 @@ fun ForecastScreen() {
             is UiState.Failed -> ErrorCard(s.message, en) { refresh() }
             is UiState.Ready -> {
                 val r = s.r
-                val urgent = listOfNotNull(r.current, r.next)
-                    .flatMap { Recommender.recommend(it) }
-                    .firstOrNull { it.code in setOf("TCWS", "FLOOD", "FLOOD_WATCH", "THUNDER") }
-                urgent?.let { AlertBanner(it, lang) }
+                urgentWarning(r.current, r.next)?.let { AlertBanner(it, lang) }
 
                 r.current?.let { HeroCard(it, lang, partial = r.currentIsPartial) }
                 r.next?.let { NextCard(it, lang) }
 
+                AlarmsSection(lang, resumes)
+
                 Text(
                     "DOST-PAGASA · ECMWF · GFS · Open-Meteo · MET Norway (CC BY 4.0)" +
-                        if (r.failures.isNotEmpty()) "\nNot reached: " + r.failures.joinToString(", ") { it.substringBefore(":") } else "",
+                        (if (r.fromCache) "\n" + (if (en) "Offline · saved " else "Offline · naka-save ") +
+                            r.fetchedAt.format(DateTimeFormatter.ofPattern("h:mm a")) else "") +
+                        (if (r.failures.isNotEmpty() && !r.fromCache) "\nNot reached: " + r.failures.joinToString(", ") else ""),
                     color = Faint, fontSize = 10.sp, lineHeight = 13.sp,
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
                 )
             }
         }
+    }
+}
+
+// ---------- Alarms section ----------
+
+@Composable
+private fun AlarmsSection(lang: Lang, resumes: Int) {
+    val ctx = LocalContext.current
+    val en = lang == Lang.EN
+    var alarms by remember { mutableStateOf(AlarmPrefs.all(ctx)) }
+    var permTick by remember { mutableIntStateOf(0) }
+    val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { permTick++ }
+
+    fun update(a: AlarmSpec) {
+        AlarmPrefs.save(ctx, a)
+        AlarmScheduler.schedule(ctx, a)
+        alarms = AlarmPrefs.all(ctx)
+    }
+    fun notifAllowed() = Build.VERSION.SDK_INT < 33 ||
+        ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    // Re-read each time the screen resumes (e.g. back from Settings).
+    val check = resumes + permTick
+    val anyOn = alarms.any { it.enabled }
+    val needNotif = remember(check) { !notifAllowed() }
+    val needExact = remember(check) { !AlarmScheduler.canScheduleExact(ctx) }
+    val needFullScreen = remember(check) { !AlarmNotifier.canUseFullScreen(ctx) }
+    val next = remember(alarms, check) { AlarmScheduler.nextAlarmText(ctx) }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(CardNavy)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Alarm, null, tint = Teal, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (en) "Alarms" else "Mga alarm", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            next?.let { Text((if (en) "Next " else "Susunod ") + it, color = Muted, fontSize = 12.sp) }
+        }
+
+        alarms.forEach { a ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(38.dp).background(Teal.copy(alpha = 0.12f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(if (a.isMain) Icons.Rounded.WbTwilight else Icons.Rounded.DirectionsWalk, null,
+                        tint = Teal, modifier = Modifier.size(20.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            TimePickerDialog(ctx, { _, h, m ->
+                                if (!notifAllowed() && Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                update(a.copy(hour = h, minute = m, enabled = true))
+                            }, a.hour, a.minute, false).show()
+                        },
+                ) {
+                    Text(a.timeText(), fontSize = 24.sp, fontWeight = FontWeight.Bold,
+                        color = if (a.enabled) Color.White else Muted)
+                    Text(a.label(lang) + (if (a.isMain) (if (en) " · full forecast" else " · buong ulat") else (if (en) " · quick check" else " · mabilis na tingin")),
+                        color = Muted, fontSize = 12.sp)
+                }
+                Switch(
+                    checked = a.enabled,
+                    onCheckedChange = { on ->
+                        if (on && !notifAllowed() && Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        update(a.copy(enabled = on))
+                    },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Navy, checkedTrackColor = Teal),
+                )
+            }
+        }
+
+        if (anyOn && needNotif) PermissionRow(
+            if (en) "Allow notifications so alarms can ring" else "Payagan ang notifications para tumunog ang alarm",
+        ) { if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
+        if (anyOn && needExact && Build.VERSION.SDK_INT >= 31) PermissionRow(
+            if (en) "Allow exact alarms so they ring on time" else "Payagan ang eksaktong oras ng alarm",
+        ) { ctx.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + ctx.packageName))) }
+        if (anyOn && needFullScreen && Build.VERSION.SDK_INT >= 34) PermissionRow(
+            if (en) "Allow full-screen alarms on the lock screen" else "Payagan ang full-screen na alarm",
+        ) { ctx.startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:" + ctx.packageName))) }
+
+        TextButton(onClick = { AlarmScheduler.test(ctx, AlarmSpec.MAIN) }, contentPadding = PaddingValues(0.dp)) {
+            Icon(Icons.Rounded.NotificationsActive, null, tint = Teal, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(if (en) "Test: ring in 10 seconds" else "Subukan: tutunog sa 10 segundo", color = Teal, fontSize = 13.sp)
+        }
+    }
+}
+
+@Composable
+private fun PermissionRow(text: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Amber.copy(alpha = 0.12f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Warning, null, tint = Amber, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(text, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        Icon(Icons.Rounded.ChevronRight, null, tint = Amber, modifier = Modifier.size(18.dp))
     }
 }
 
@@ -161,7 +309,7 @@ private fun HeaderButton(icon: ImageVector, label: String?, onClick: () -> Unit)
 }
 
 @Composable
-private fun AlertBanner(rec: Recommendation, lang: Lang) {
+internal fun AlertBanner(rec: Recommendation, lang: Lang) {
     val c = if (rec.priority == Priority.URGENT) Red else Amber
     Row(
         Modifier
@@ -179,7 +327,7 @@ private fun AlertBanner(rec: Recommendation, lang: Lang) {
 }
 
 @Composable
-private fun HeroCard(f: WindowForecast, lang: Lang, partial: Boolean) {
+internal fun HeroCard(f: WindowForecast, lang: Lang, partial: Boolean) {
     val en = lang == Lang.EN
     val isDay = f.window.kind == WindowKind.DAY
     Column(
@@ -194,7 +342,7 @@ private fun HeroCard(f: WindowForecast, lang: Lang, partial: Boolean) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Pill(
                 icon = if (isDay) Icons.Rounded.WbSunny else Icons.Rounded.NightsStay,
-                text = periodLabel(f.window.kind, current = true, partial = partial, en = en),
+                text = periodLabel(f, partial = partial, en = en),
             )
             Spacer(Modifier.weight(1f))
             ConfidenceDot(f.confidence, en)
@@ -238,10 +386,9 @@ private fun HeroCard(f: WindowForecast, lang: Lang, partial: Boolean) {
 }
 
 @Composable
-private fun NextCard(f: WindowForecast, lang: Lang) {
+internal fun NextCard(f: WindowForecast, lang: Lang, partial: Boolean = false, adviceCount: Int = 1) {
     val en = lang == Lang.EN
     val isDay = f.window.kind == WindowKind.DAY
-    val top = Recommender.recommend(f).first()
     Column(
         Modifier
             .fillMaxWidth()
@@ -253,7 +400,7 @@ private fun NextCard(f: WindowForecast, lang: Lang) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Pill(
                 icon = if (isDay) Icons.Rounded.WbSunny else Icons.Rounded.NightsStay,
-                text = periodLabel(f.window.kind, current = false, partial = false, en = en),
+                text = periodLabel(f, partial = partial, en = en),
             )
             Spacer(Modifier.weight(1f))
             ConfidenceDot(f.confidence, en)
@@ -270,7 +417,7 @@ private fun NextCard(f: WindowForecast, lang: Lang) {
                 Text("${f.windMaxKph} km/h", color = Muted, fontSize = 12.sp)
             }
         }
-        AdviceRow(top, lang)
+        Recommender.recommend(f).take(adviceCount).forEach { AdviceRow(it, lang) }
     }
 }
 
@@ -372,13 +519,23 @@ private fun ErrorCard(message: String, en: Boolean, onRetry: () -> Unit) {
 
 // ---------- Mapping helpers ----------
 
-private fun periodLabel(kind: WindowKind, current: Boolean, partial: Boolean, en: Boolean): String = when {
-    kind == WindowKind.DAY && current && partial -> if (en) "Today · until 6 PM" else "Ngayon · hanggang 6 PM"
-    kind == WindowKind.DAY && current -> if (en) "Today · 6 AM–6 PM" else "Ngayon · 6 AM–6 PM"
-    kind == WindowKind.DAY -> if (en) "Tomorrow · 6 AM–6 PM" else "Bukas · 6 AM–6 PM"
-    current && partial -> if (en) "Tonight · until 6 AM" else "Ngayong gabi · hanggang 6 AM"
-    else -> if (en) "Tonight · 6 PM–6 AM" else "Ngayong gabi · 6 PM–6 AM"
+private fun periodLabel(f: WindowForecast, partial: Boolean, en: Boolean): String {
+    val today = java.time.LocalDate.now(ph.weatherapp.core.engine.MANILA)
+    val startDay = f.window.start.toLocalDate()
+    return if (f.window.kind == WindowKind.DAY) {
+        val day = if (startDay == today) (if (en) "Today" else "Ngayon") else (if (en) "Tomorrow" else "Bukas")
+        day + if (partial) (if (en) " · until 6 PM" else " · hanggang 6 PM") else " · 6 AM–6 PM"
+    } else {
+        // A night that started yesterday evening is still "tonight" after midnight.
+        val night = if (startDay <= today) (if (en) "Tonight" else "Ngayong gabi") else (if (en) "Tomorrow night" else "Bukas ng gabi")
+        night + if (partial) (if (en) " · until 6 AM" else " · hanggang 6 AM") else " · 6 PM–6 AM"
+    }
 }
+
+/** The first official-warning item (Signal, rainfall warning, thunderstorm), if any. */
+internal fun urgentWarning(vararg fs: WindowForecast?): Recommendation? =
+    fs.filterNotNull().flatMap { Recommender.recommend(it) }
+        .firstOrNull { it.code in setOf("TCWS", "FLOOD", "FLOOD_WATCH", "THUNDER") }
 
 private fun rainLabel(pct: Int, en: Boolean) = when {
     pct >= 80 -> if (en) "Rain very likely" else "Malamang na malamang umulan"
