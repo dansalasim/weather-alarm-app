@@ -1,0 +1,28 @@
+{
+  "areaId": "isabela-city-basilan",
+  "updatedAt": "2026-10-28T06:35:00+08:00",
+  "regional": {
+    "source": "DOST-PAGASA Mindanao PRSD Regional Forecast",
+    "issuedAt": "2026-10-28T05:00:00+08:00",
+    "validUntil": "2026-10-29T05:00:00+08:00",
+    "skyCondition": "Partly cloudy skies to at times cloudy with rainshowers or thunderstorms",
+    "tempMinC": 26,
+    "tempMaxC": 34,
+    "winds": "Light to Moderate, from Northeast to East",
+    "coastalWaters": "Slight to Moderate (0.6-2.1 m)",
+    "synopsis": null
+  },
+  "heatIndex": {
+    "source": "DOST-PAGASA iHeatMAP (ECMWF-based)",
+    "issuedAt": "2026-10-28T05:52:00+08:00",
+    "location": "Brgy. Sunrise Village, City of Isabela",
+    "date": "2026-10-28",
+    "hourlyC": { "8": 31, "9": 33, "10": 34, "11": 34, "12": 34, "13": 33, "14": 33, "15": 33, "16": 32, "17": 31 }
+  },
+  "warnings": {
+    "tcwsLevel": null,
+    "rainfallWarning": null,
+    "thunderstormAdvisory": false,
+    "validUntil": null
+  }
+}
