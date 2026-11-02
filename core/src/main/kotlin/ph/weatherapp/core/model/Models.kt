@@ -41,6 +41,7 @@ data class PagasaAdvisory(
     val thunderstormAdvisory: Boolean = false,
     val heatIndexForecastC: Int? = null,         // PAGASA forecast heat index for the area
     val forecastRainLikely: Boolean? = null,     // from the regional text forecast, if parsed
+    val skyCondition: String? = null,            // PAGASA's own words, shown on the card
 ) {
     fun isValidAt(t: ZonedDateTime): Boolean =
         !t.isBefore(issuedAt.minusHours(1)) && (validUntil == null || !t.isAfter(validUntil))

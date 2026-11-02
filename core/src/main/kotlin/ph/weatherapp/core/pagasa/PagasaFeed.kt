@@ -1,7 +1,11 @@
 package ph.weatherapp.core.pagasa
 
+import kotlinx.serialization.json.*
+import ph.weatherapp.core.engine.MANILA
+import ph.weatherapp.core.model.ForecastWindow
 import ph.weatherapp.core.model.PagasaAdvisory
 import ph.weatherapp.core.model.RainfallWarning
+import ph.weatherapp.core.model.WindowKind
 import java.time.LocalDate
 import java.time.ZonedDateTime
 
@@ -83,19 +87,99 @@ object PagasaText {
  * POSSIBLE leaves forecastRainLikely empty: PAGASA isn't committing either way,
  * so the other sources decide.
  */
-fun PagasaFeed.toAdvisory(): PagasaAdvisory {
-    val outlook = regional?.let { PagasaText.rainOutlook(it.skyCondition) }
+fun PagasaFeed.toAdvisory(window: ForecastWindow? = null): PagasaAdvisory {
+    // Night windows use PAGASA's "tonight" wording when it's available.
+    val sky = if (window?.kind == WindowKind.NIGHT) regional?.tonightSkyCondition ?: regional?.skyCondition
+              else regional?.skyCondition
+    val outlook = sky?.let { PagasaText.rainOutlook(it) }
+    // Heat index only for a daytime window on the same date, and only the hours inside it
+    // (so "rest of today" at 3 PM doesn't show the noon peak that has already passed).
+    val heat = when {
+        heatIndex == null -> null
+        window == null -> heatIndex.peakC
+        window.kind != WindowKind.DAY || heatIndex.date != window.start.toLocalDate() -> null
+        else -> heatIndex.hourlyC.filterKeys { it >= window.start.hour && it < 18 }.values.maxOrNull()
+    }
     return PagasaAdvisory(
         issuedAt = listOfNotNull(regional?.issuedAt, heatIndex?.issuedAt).minOrNull() ?: updatedAt,
         validUntil = warnings.validUntil ?: regional?.validUntil,
         tcwsLevel = warnings.tcwsLevel,
         rainfallWarning = warnings.rainfallWarning,
         thunderstormAdvisory = warnings.thunderstormAdvisory,
-        heatIndexForecastC = heatIndex?.peakC,
+        heatIndexForecastC = heat,
+        skyCondition = sky,
         forecastRainLikely = when (outlook) {
             RainOutlook.LIKELY, RainOutlook.VERY_LIKELY -> true
             RainOutlook.UNLIKELY -> false
             RainOutlook.POSSIBLE, null -> null
         },
     )
+}
+
+/**
+ * Reads the two daily feed files the CDRRMO morning tasks publish
+ * (feed/<area>/regional.json and feed/<area>/heat.json). Either may be missing.
+ * Bad or missing fields become null rather than failing the whole feed.
+ */
+object PagasaFeedJson {
+
+    fun parse(areaId: String, regionalJson: String?, heatJson: String?, now: ZonedDateTime): PagasaFeed {
+        val r = regionalJson?.let { runCatching { Json.parseToJsonElement(it).jsonObject }.getOrNull() }
+        val h = heatJson?.let { runCatching { Json.parseToJsonElement(it).jsonObject }.getOrNull() }
+
+        val regional = r?.let { o ->
+            val issued = o.time("issuedAt") ?: return@let null
+            RegionalForecast(
+                issuedAt = issued,
+                validUntil = o.time("validUntil") ?: issued.plusDays(1),
+                skyCondition = o.str("skyCondition") ?: return@let null,
+                tempMinC = o.int("tempMinC"),
+                tempMaxC = o.int("tempMaxC"),
+                winds = o.str("winds"),
+                coastalWaters = o.str("coastalWaters"),
+                synopsis = o.str("synopsis"),
+                tonightSkyCondition = o.str("tonightSkyCondition"),
+                tonightMinC = o.int("tonightMinC"),
+                tonightMaxC = o.int("tonightMaxC"),
+            )
+        }
+
+        val w = r?.get("warnings")?.let { it as? JsonObject }
+        val warnings = Warnings(
+            tcwsLevel = w?.int("tcwsLevel")?.takeIf { it in 1..5 },
+            rainfallWarning = w?.str("rainfallWarning")?.uppercase()?.let { c -> RainfallWarning.entries.firstOrNull { it.name == c } },
+            thunderstormAdvisory = w?.bool("thunderstormAdvisory") ?: false,
+            validUntil = w?.time("validUntil"),
+        )
+
+        val heat = h?.let { o ->
+            val hourly = (o["hourlyC"] as? JsonObject)?.mapNotNull { (k, v) ->
+                val hour = k.toIntOrNull(); val c = (v as? JsonPrimitive)?.doubleOrNull
+                if (hour != null && c != null) hour to Math.round(c).toInt() else null
+            }?.toMap().orEmpty()
+            val date = o.str("date")?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            if (hourly.isEmpty() || date == null) null else HeatIndexForecast(
+                issuedAt = o.time("issuedAt") ?: now,
+                location = o.str("location") ?: "",
+                date = date,
+                hourlyC = hourly,
+            )
+        }
+
+        return PagasaFeed(
+            areaId = areaId,
+            regional = regional,
+            heatIndex = heat,
+            warnings = warnings,
+            updatedAt = listOfNotNull(regional?.issuedAt, heat?.issuedAt).maxOrNull() ?: now,
+        )
+    }
+
+    private fun JsonObject.prim(k: String) = (this[k] as? JsonPrimitive)?.takeIf { it !is JsonNull }
+    private fun JsonObject.str(k: String) = prim(k)?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+    private fun JsonObject.int(k: String) = prim(k)?.doubleOrNull?.let { Math.round(it).toInt() }
+    private fun JsonObject.bool(k: String) = prim(k)?.booleanOrNull
+    private fun JsonObject.time(k: String) = str(k)?.let {
+        runCatching { ZonedDateTime.parse(it).withZoneSameInstant(MANILA) }.getOrNull()
+    }
 }

@@ -8,6 +8,8 @@ import ph.weatherapp.core.engine.Windows
 import ph.weatherapp.core.model.ForecastWindow
 import ph.weatherapp.core.model.SourceForecast
 import ph.weatherapp.core.model.WindowForecast
+import ph.weatherapp.core.pagasa.PagasaFeedJson
+import ph.weatherapp.core.pagasa.toAdvisory
 import ph.weatherapp.core.sources.ALL_SOURCES
 import ph.weatherapp.core.sources.MetNorway
 import java.io.IOException
@@ -23,6 +25,8 @@ object WeatherRepository {
     const val PLACE = "City of Isabela, Basilan"
     private const val LAT = 6.7032
     private const val LON = 121.9838
+    private const val AREA_ID = "isabela-city-basilan"
+    private const val FEED_BASE = "https://raw.githubusercontent.com/dansalasim/weather-alarm-app/feed/$AREA_ID/"
 
     data class Result(
         val current: WindowForecast?,
@@ -45,16 +49,23 @@ object WeatherRepository {
         }
         if (sources.isEmpty()) throw IOException("No weather source could be reached. Check your internet connection.")
 
+        // PAGASA feed published each morning by the CDRRMO tasks. Optional: the app still works without it.
+        val regionalJson = runCatching { httpGet(FEED_BASE + "regional.json") }.getOrNull()
+        val heatJson = runCatching { httpGet(FEED_BASE + "heat.json") }.getOrNull()
+        if (regionalJson == null && heatJson == null) failures += "PAGASA feed"
+        val feed = PagasaFeedJson.parse(AREA_ID, regionalJson, heatJson, now)
+
         // The current window only counts the hours still ahead ("rest of today").
         val cur = Windows.current(now)
         val thisHour = now.truncatedTo(ChronoUnit.HOURS)
         val partial = thisHour.isAfter(cur.start)
         val remaining = ForecastWindow(cur.kind, if (partial) thisHour else cur.start, cur.end)
+        val next = Windows.next(cur)
         val engine = Consolidator(Consolidator.Config(minHoursPerSource = 1))
 
         Result(
-            current = engine.consolidate(remaining, sources, null),
-            next = Consolidator().consolidate(Windows.next(cur), sources, null),
+            current = engine.consolidate(remaining, sources, feed.toAdvisory(remaining)),
+            next = Consolidator().consolidate(next, sources, feed.toAdvisory(next)),
             currentIsPartial = partial,
             failures = failures,
             fetchedAt = now,

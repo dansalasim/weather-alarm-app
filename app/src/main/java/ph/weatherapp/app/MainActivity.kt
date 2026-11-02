@@ -3,7 +3,9 @@ package ph.weatherapp.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -120,7 +122,7 @@ fun ForecastScreen() {
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        "Data: Open-Meteo · MET Norway (CC BY 4.0) · PAGASA warnings coming soon",
+                        "Data: DOST-PAGASA · Open-Meteo · MET Norway (CC BY 4.0)",
                         color = Muted.copy(alpha = 0.7f), fontSize = 10.sp, lineHeight = 13.sp,
                     )
                     if (r.failures.isNotEmpty()) {
@@ -160,6 +162,18 @@ private fun WindowCard(f: WindowForecast, lang: Lang, isNow: Boolean, partial: B
                 }
             }
 
+            f.pagasa?.skyCondition?.let { sky ->
+                Row(verticalAlignment = Alignment.Top) {
+                    Text("PAGASA", color = Navy, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .padding(top = 2.dp)
+                            .background(Teal, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 5.dp, vertical = 1.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(sky, color = Color.White.copy(alpha = 0.85f), fontSize = 14.sp, lineHeight = 19.sp)
+                }
+            }
+
             Stat(if (en) "Temperature" else "Temperatura", "${f.tempMinC}–${f.tempMaxC}°C")
             Stat(if (en) "Wind" else "Hangin", (if (en) "up to " else "hanggang ") + "${f.windMaxKph} km/h" +
                 (f.gustMaxKph?.let { if (en) ", gusts $it" else ", bugso $it" } ?: ""))
@@ -178,6 +192,13 @@ private fun WindowCard(f: WindowForecast, lang: Lang, isNow: Boolean, partial: B
             )
 
             HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+            if (f.pagasaOverrides.isNotEmpty()) {
+                Text(
+                    (if (en) "Adjusted per PAGASA: " else "Inayon sa PAGASA: ") + f.pagasaOverrides.joinToString("; "),
+                    color = Muted, fontSize = 11.sp, lineHeight = 15.sp,
+                )
+            }
 
             Recommender.recommend(f).forEach { rec ->
                 val c = if (rec.priority == Priority.URGENT) Amber else Color.White
