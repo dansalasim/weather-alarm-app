@@ -6,3 +6,5 @@ Updated every morning by the CDRRMO Isabela City scheduled tasks:
 
 The app reads these files from this branch. Values are copied exactly from PAGASA; nothing is estimated.
 App code lives on the `main` branch.
+- `suspensions.json` — class/work suspensions, entered by hand from official LGU announcements through the
+  "Class/work suspension" issue form (main branch). Only the repository owner and collaborators can post.
