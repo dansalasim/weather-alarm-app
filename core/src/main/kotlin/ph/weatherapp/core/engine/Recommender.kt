@@ -47,11 +47,11 @@ object Recommender {
         // --- Rain ---
         when {
             f.rainChancePct >= 70 -> out += Recommendation("UMBRELLA", Priority.HIGH,
-                "Rain is likely (${f.rainChancePct}%). Bring an umbrella or raincoat and keep gadgets in a waterproof bag.",
-                "Malamang umulan (${f.rainChancePct}%). Magdala ng payong o kapote at ilagay ang gadgets sa waterproof na lalagyan.")
+                "Rain is likely. Bring an umbrella or raincoat and keep gadgets in a waterproof bag.",
+                "Malamang umulan. Magdala ng payong o kapote at ilagay ang gadgets sa waterproof na lalagyan.")
             f.rainChancePct >= 40 -> out += Recommendation("UMBRELLA_MAYBE", Priority.NORMAL,
-                "There's a chance of rain (${f.rainChancePct}%). Bring a small umbrella just in case.",
-                "May tsansang umulan (${f.rainChancePct}%). Magdala ng maliit na payong para sigurado.")
+                "There's a chance of rain. Bring a small umbrella just in case.",
+                "May tsansang umulan. Magdala ng maliit na payong para sigurado.")
         }
 
         // --- Heat (daytime only) ---

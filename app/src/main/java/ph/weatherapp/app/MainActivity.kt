@@ -118,12 +118,14 @@ fun ForecastScreen() {
                 OutlinedButton(onClick = { refresh() }, modifier = Modifier.fillMaxWidth()) {
                     Text(if (lang == Lang.EN) "Refresh" else "I-refresh")
                 }
-                Text(
-                    "Sources: Open-Meteo, MET Norway (CC BY 4.0). PAGASA warnings will be added in the next build.",
-                    color = Muted, fontSize = 11.sp,
-                )
-                if (r.failures.isNotEmpty()) {
-                    Text("Not reached: " + r.failures.joinToString("; "), color = Amber, fontSize = 11.sp)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        "Data: Open-Meteo · MET Norway (CC BY 4.0) · PAGASA warnings coming soon",
+                        color = Muted.copy(alpha = 0.7f), fontSize = 10.sp, lineHeight = 13.sp,
+                    )
+                    if (r.failures.isNotEmpty()) {
+                        Text("Not reached: " + r.failures.joinToString("; "), color = Amber.copy(alpha = 0.8f), fontSize = 10.sp, lineHeight = 13.sp)
+                    }
                 }
             }
         }
@@ -148,10 +150,14 @@ private fun WindowCard(f: WindowForecast, lang: Lang, isNow: Boolean, partial: B
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, color = Teal, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
 
-            Row(verticalAlignment = Alignment.Bottom) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${f.rainChancePct}%", fontSize = 44.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(8.dp))
-                Text(if (en) "chance of rain" else "tsansa ng ulan", color = Muted, modifier = Modifier.padding(bottom = 10.dp))
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(rainLabel(f.rainChancePct, en), fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
+                        color = if (f.rainChancePct >= 60) Teal else Color.White)
+                    Text(if (en) "chance of rain" else "tsansa ng ulan", color = Muted, fontSize = 13.sp)
+                }
             }
 
             Stat(if (en) "Temperature" else "Temperatura", "${f.tempMinC}–${f.tempMaxC}°C")
@@ -174,11 +180,11 @@ private fun WindowCard(f: WindowForecast, lang: Lang, isNow: Boolean, partial: B
             HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
 
             Recommender.recommend(f).forEach { rec ->
-                Text(
-                    "• " + rec.text(lang),
-                    color = if (rec.priority == Priority.URGENT) Amber else Color.White,
-                    fontSize = 15.sp,
-                )
+                val c = if (rec.priority == Priority.URGENT) Amber else Color.White
+                Row {
+                    Text("•", color = Teal, fontSize = 15.sp, modifier = Modifier.width(16.dp))
+                    Text(rec.text(lang), color = c, fontSize = 15.sp, lineHeight = 21.sp)
+                }
             }
         }
     }
@@ -190,6 +196,14 @@ private fun Stat(label: String, value: String, valueColor: Color = Color.White) 
         Text(label, color = Muted, modifier = Modifier.weight(1f))
         Text(value, color = valueColor, fontWeight = FontWeight.Medium)
     }
+}
+
+private fun rainLabel(pct: Int, en: Boolean) = when {
+    pct >= 80 -> if (en) "Rain very likely" else "Malamang na malamang umulan"
+    pct >= 60 -> if (en) "Rain likely" else "Malamang umulan"
+    pct >= 40 -> if (en) "Rain possible" else "Posibleng umulan"
+    pct >= 20 -> if (en) "Rain unlikely" else "Malabong umulan"
+    else -> if (en) "No rain expected" else "Walang inaasahang ulan"
 }
 
 private fun levelName(l: HeatIndexLevel, en: Boolean) = when (l) {
