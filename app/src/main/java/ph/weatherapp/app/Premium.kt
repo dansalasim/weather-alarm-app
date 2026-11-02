@@ -84,9 +84,9 @@ class Speaker(ctx: Context) {
     }
 
     /** [script] builds the text for the language actually used (English if no Filipino voice is installed). */
-    fun speak(lang: Lang, script: (Lang) -> String, onDone: () -> Unit) {
+    fun speak(lang: Lang, script: (Lang) -> String, whenDone: () -> Unit) {
         val go = {
-            if (!ready) onDone() else {
+            if (!ready) whenDone() else {
                 val useLang = if (lang == Lang.FIL && canSpeakFilipino()) Lang.FIL else Lang.EN
                 tts.language = if (useLang == Lang.FIL) Locale("fil", "PH") else Locale.US
                 val text = script(useLang)
@@ -94,9 +94,9 @@ class Speaker(ctx: Context) {
                 val main = android.os.Handler(android.os.Looper.getMainLooper())
                 tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
-                    override fun onDone(utteranceId: String?) { main.post { onDone() } }
+                    override fun onDone(utteranceId: String?) { main.post { whenDone() } }
                     @Deprecated("Deprecated in Java")
-                    override fun onError(utteranceId: String?) { main.post { onDone() } }
+                    override fun onError(utteranceId: String?) { main.post { whenDone() } }
                 })
                 tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "forecast")
             }
