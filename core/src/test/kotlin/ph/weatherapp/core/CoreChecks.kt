@@ -112,6 +112,7 @@ fun main() {
     check("6-hour block consolidates (6 points per source)", morningForecast.sourcesUsed.size == 2)
     val v6 = VoiceScript.build(morningForecast, null, Recommender.recommend(morningForecast), Lang.EN, t(3, 5))
     check("voice names the block", v6.contains("this morning, 6 AM to 12 noon") && v6.startsWith("Good morning"))
+    check("voice greets by nickname", VoiceScript.build(morningForecast, null, emptyList(), Lang.FIL, t(3, 5), "Dan").startsWith("Magandang umaga, Dan."))
 
     println(if (failures == 0) "\nAll checks passed." else "\n$failures check(s) failed.")
     if (failures > 0) kotlin.system.exitProcess(1)

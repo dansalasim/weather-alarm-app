@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,12 +70,32 @@ class MainActivity : ComponentActivity() {
         AlarmNotifier.ensureChannel(this)
         AlarmScheduler.scheduleAll(this)
         Thread { MobileAds.initialize(this) {} }.start()   // banner ads (free version)
-        setContent { AppTheme { ForecastScreen(resumes.intValue) } }
+        // Landing page on each fresh launch (not on rotation), unless "Don't show again".
+        val showLanding = savedInstanceState == null && !Profile.hideDisclaimer(this)
+        setContent { AppTheme { AppRoot(showLanding, resumes.intValue) } }
     }
 
     override fun onResume() {
         super.onResume()
         resumes.intValue++
+    }
+}
+
+private enum class Stage { LANDING, SETUP, EDIT_PROFILE, MAIN }
+
+@Composable
+private fun AppRoot(showLanding: Boolean, resumes: Int) {
+    val ctx = LocalContext.current.applicationContext
+    fun afterLanding() = if (Profile.isSetUp(ctx)) Stage.MAIN else Stage.SETUP
+    var stage by rememberSaveable { mutableStateOf(if (showLanding) Stage.LANDING else afterLanding()) }
+    when (stage) {
+        Stage.LANDING -> LandingScreen(
+            onUnderstand = { stage = afterLanding() },
+            onDontShowAgain = { Profile.setHideDisclaimer(ctx); stage = afterLanding() },
+        )
+        Stage.SETUP -> SetupScreen(editing = false) { stage = Stage.MAIN }
+        Stage.EDIT_PROFILE -> SetupScreen(editing = true) { stage = Stage.MAIN }
+        Stage.MAIN -> ForecastScreen(resumes) { stage = Stage.EDIT_PROFILE }
     }
 }
 
@@ -113,7 +134,7 @@ private sealed interface UiState {
 }
 
 @Composable
-fun ForecastScreen(resumes: Int) {
+fun ForecastScreen(resumes: Int, onEditProfile: () -> Unit) {
     val ctx = LocalContext.current.applicationContext
     // Show the saved forecast instantly, then refresh from the internet.
     var state by remember {
@@ -144,15 +165,7 @@ fun ForecastScreen(resumes: Int) {
         if (granted) PlacePrefs.useLocation(ctx)
         refresh()
     }
-    LaunchedEffect(Unit) {
-        val prefs = ctx.getSharedPreferences("place", android.content.Context.MODE_PRIVATE)
-        if (PlacePrefs.isAuto(ctx) && !Locator.hasPermission(ctx) && !prefs.getBoolean("asked", false)) {
-            prefs.edit().putBoolean("asked", true).apply()
-            locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
-        } else {
-            refresh()
-        }
-    }
+    LaunchedEffect(Unit) { refresh() }
 
     if (showPlaces) PlacePicker(
         lang = lang,
@@ -168,6 +181,7 @@ fun ForecastScreen(resumes: Int) {
             state = WeatherRepository.loadCached(ctx, forAlarm = false)?.let { UiState.Ready(it) } ?: UiState.Loading
             refresh()
         },
+        onEditProfile = { showPlaces = false; onEditProfile() },
     )
 
     fun setPremium(on: Boolean) {
@@ -192,6 +206,10 @@ fun ForecastScreen(resumes: Int) {
                 null, tint = Teal, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(6.dp))
             Column(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable { showPlaces = true }) {
+                Profile.nickname(ctx)?.let { name ->
+                    Text(greeting(en) + ", " + name, color = Teal, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(place.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false))
@@ -230,7 +248,7 @@ fun ForecastScreen(resumes: Int) {
                     r.next?.let { NextCard(it, lang) }
                 }
 
-                if (premium) Areas.byId(r.place.areaId)?.takeIf { it.lguPageUrl != null }?.let { LguCard(it, lang) }
+                if (premium) Profile.lgu(ctx, r.place.areaId)?.let { (name, url) -> LguCard(name, url, lang) }
                 AlarmsSection(lang, resumes)
                 PremiumCard(premium, lang) { setPremium(it) }
 
@@ -532,7 +550,7 @@ internal fun SuspensionCard(sp: Suspension, lang: Lang) {
 // ---------- LGU announcements (premium) ----------
 
 @Composable
-private fun LguCard(area: Area, lang: Lang) {
+private fun LguCard(lguName: String, lguUrl: String, lang: Lang) {
     val ctx = LocalContext.current
     val en = lang == Lang.EN
     Column(
@@ -553,7 +571,7 @@ private fun LguCard(area: Area, lang: Lang) {
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
                 .background(Tile)
-                .clickable { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(area.lguPageUrl))) } }
+                .clickable { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(lguUrl))) } }
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -562,7 +580,7 @@ private fun LguCard(area: Area, lang: Lang) {
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(area.lguName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(lguName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text(if (en) "Official Facebook page" else "Opisyal na Facebook page", color = Muted, fontSize = 12.sp)
             }
             Icon(Icons.Rounded.OpenInNew, null, tint = Teal, modifier = Modifier.size(18.dp))
@@ -577,7 +595,7 @@ private fun LguCard(area: Area, lang: Lang) {
 // ---------- Place picker ----------
 
 @Composable
-private fun PlacePicker(lang: Lang, onDismiss: () -> Unit, onUseLocation: () -> Unit, onPick: (Area) -> Unit) {
+private fun PlacePicker(lang: Lang, onDismiss: () -> Unit, onUseLocation: () -> Unit, onPick: (Area) -> Unit, onEditProfile: () -> Unit) {
     val en = lang == Lang.EN
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -592,6 +610,9 @@ private fun PlacePicker(lang: Lang, onDismiss: () -> Unit, onUseLocation: () -> 
                 Areas.ALL.forEach { a ->
                     PlaceOption(Icons.Rounded.LocationCity, a.name, a.province) { onPick(a) }
                 }
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                PlaceOption(Icons.Rounded.ManageAccounts, if (en) "Edit profile" else "I-edit ang profile",
+                    if (en) "Nickname, location and LGU page" else "Palayaw, lokasyon at pahina ng LGU", onEditProfile)
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(if (en) "Close" else "Isara") } },
@@ -841,6 +862,12 @@ private fun ErrorCard(message: String, en: Boolean, onRetry: () -> Unit) {
 
 private fun periodLabel(f: WindowForecast, partial: Boolean, en: Boolean): String =
     Periods.label(f.window, if (en) Lang.EN else Lang.FIL, partial, java.time.LocalDate.now(ph.weatherapp.core.engine.MANILA))
+
+internal fun greeting(en: Boolean): String = when (java.time.ZonedDateTime.now(ph.weatherapp.core.engine.MANILA).hour) {
+    in 0..11 -> if (en) "Good morning" else "Magandang umaga"
+    in 12..17 -> if (en) "Good afternoon" else "Magandang hapon"
+    else -> if (en) "Good evening" else "Magandang gabi"
+}
 
 /** The first official-warning item (Signal, rainfall warning, thunderstorm), if any. */
 internal fun urgentWarning(vararg fs: WindowForecast?): Recommendation? =

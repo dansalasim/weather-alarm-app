@@ -15,6 +15,7 @@ object VoiceScript {
         recs: List<Recommendation>,
         lang: Lang,
         now: ZonedDateTime = ZonedDateTime.now(MANILA),
+        name: String? = null,
     ): String {
         val en = lang == Lang.EN
         val sb = StringBuilder()
@@ -23,7 +24,9 @@ object VoiceScript {
             in 12..17 -> if (en) "Good afternoon" else "Magandang hapon"
             else -> if (en) "Good evening" else "Magandang gabi"
         }
-        sb.append(greeting).append(". ")
+        sb.append(greeting)
+        name?.takeIf { it.isNotBlank() }?.let { sb.append(", ").append(it.trim()) }
+        sb.append(". ")
         if (en) {
             sb.append("For ${Periods.spoken(main.window, lang)}: ")
             sb.append("${main.rainChancePct} percent chance of rain, ")

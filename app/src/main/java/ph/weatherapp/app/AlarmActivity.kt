@@ -104,7 +104,8 @@ private fun AlarmScreen(
         val main = d.current ?: return onClose()
         if (speaker == null) return onClose()
         speaking = true
-        speaker.speak(lang, { l -> VoiceScript.build(main, d.next, Recommender.recommend(main), l) }) {
+        val nick = Profile.nickname(ctx)
+        speaker.speak(lang, { l -> VoiceScript.build(main, d.next, Recommender.recommend(main), l, name = nick) }) {
             speaking = false
             if (thenClose) onClose()
         }
