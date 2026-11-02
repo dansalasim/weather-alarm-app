@@ -115,6 +115,8 @@ def main():
             "postedAt": now.isoformat(timespec="seconds"),
             "issue": url,
         }
+        # Re-submitting (reopening) the same form replaces its earlier entry instead of duplicating it.
+        items = [a for a in items if a.get("issue") != url or not url]
         items.append(entry)
         what_txt = {"Classes": "No classes", "Work": "No work", "Classes and work": "No classes and work"}[what]
         scope = (", ".join(levels) + " · " if classes else "") + entry["sector"]

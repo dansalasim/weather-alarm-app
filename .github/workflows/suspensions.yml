@@ -4,7 +4,7 @@ name: Class/work suspension
 # Only the repository owner and collaborators can post: the repo is public.
 on:
   issues:
-    types: [opened]
+    types: [opened, reopened]
 
 permissions:
   contents: write
@@ -16,8 +16,10 @@ concurrency:
 
 jobs:
   update-feed:
+    # Recognise the form by its fields (the title can be anything), and only from owner/collaborators.
     if: >-
-      startsWith(github.event.issue.title, '[Suspension]') &&
+      contains(github.event.issue.body, '### Suspended') &&
+      contains(github.event.issue.body, '### City') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
     runs-on: ubuntu-latest
     steps:
