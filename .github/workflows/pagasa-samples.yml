@@ -16,24 +16,24 @@ jobs:
         run: |
           mkdir s && cd s
           UA="Mozilla/5.0 (Linux; Android 14) WeatherAlarmPH/0.2"
-          get() { curl -sSL -A "$UA" --max-time 60 -o "$1" -w "$1 %{http_code} %{size_download}\n" "$2" || echo "$1 FAILED"; }
-          get minprsd.html https://www.pagasa.dost.gov.ph/regional-forecast/minprsd
-          for r in ncrprsd nlprsd slprsd visprsd; do get $r.html https://www.pagasa.dost.gov.ph/regional-forecast/$r; done
-          get weather.html https://www.pagasa.dost.gov.ph/weather
-          get tc.html https://www.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin
-          for f in *.html; do
-            grep -oE 'https?://[^"'"'"' ]+\.pdf[^"'"'"' ]*' "$f" | sort -u | sed "s|^|$f |" >> pdf-links.txt || true
-          done
-          cat pdf-links.txt
-          i=0; while read src url; do i=$((i+1)); get "${src%.html}-$i.pdf" "$url"; done < pdf-links.txt
-          get hi-current-date.json https://iheatmap.pagasa.dost.gov.ph/internal/api/current-date
-          D=$(python3 -c "import json;print(json.load(open('hi-current-date.json'))['latest_issuance_date'])" || echo "")
-          get hi-pixel.json "https://iheatmap.pagasa.dost.gov.ph/internal/api/pixel?lat=6.7032&long=121.9838&issuance_date=$D"
-          get hi-max.json "https://iheatmap.pagasa.dost.gov.ph/internal/api/pixel/max?lat=6.7032&long=121.9838&issuance_date=$D"
-          get hi-pixel-manila.json "https://iheatmap.pagasa.dost.gov.ph/internal/api/pixel?lat=14.5995&long=120.9842&issuance_date=$D"
-          sudo apt-get -qq install -y poppler-utils >/dev/null 2>&1 || true
-          for p in *.pdf; do pdftotext -layout "$p" "${p%.pdf}.txt" || true; done
-          ls -la
+          J=cookies.txt
+          get() { curl -sSL -A "$UA" -b $J -c $J --max-time 60 -o "$1" -w "$1 %{http_code} %{size_download}\n" "$2" || echo "$1 FAILED"; }
+          post() { curl -sSL -A "$UA" -b $J -c $J --max-time 60 -X POST -H "X-Requested-With: XMLHttpRequest" -H "Referer: $3" -o "$1" -w "$1 %{http_code} %{size_download}\n" "$2" || echo "$1 FAILED"; }
+          B=https://pagasa.dost.gov.ph
+          get minprsd.html $B/regional-forecast/minprsd
+          post api-min-isabela.json $B/api/regional/Mindanao/990100000 $B/regional-forecast/minprsd
+          post api-min-zambo.json $B/api/regional/Mindanao/97300000 $B/regional-forecast/minprsd
+          post api-min-basilan-guess.json $B/api/regional/Mindanao/1500700000 $B/regional-forecast/minprsd
+          get ncrprsd.html $B/regional-forecast/ncrprsd
+          CODE=$(grep -oE "value='[0-9]+'" ncrprsd.html | head -1 | grep -oE "[0-9]+")
+          post api-ncr-first.json $B/api/regional/NationalCapitalRegion/$CODE $B/regional-forecast/ncrprsd
+          get visprsd.html $B/regional-forecast/visprsd
+          CODE=$(grep -oE "value='[0-9]+'" visprsd.html | head -1 | grep -oE "[0-9]+")
+          post api-vis-first.json $B/api/regional/Visayas/$CODE $B/regional-forecast/visprsd
+          # Without a session cookie, as a phone app would call it
+          curl -sSL -A "$UA" --max-time 60 -X POST -o api-min-isabela-nocookie.json -w "nocookie %{http_code} %{size_download}\n" $B/api/regional/Mindanao/990100000 || true
+          curl -sSL -A "$UA" --max-time 60 -o api-min-isabela-get.json -w "get %{http_code} %{size_download}\n" $B/api/regional/Mindanao/990100000 || true
+          for f in api-*.json; do echo "== $f"; head -c 3000 "$f"; echo; done
       - name: Publish to the samples branch
         run: |
           cd s && git init -q -b samples
