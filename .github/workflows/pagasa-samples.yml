@@ -18,7 +18,7 @@ jobs:
           UA="Mozilla/5.0 (Linux; Android 14) WeatherAlarmPH/0.2"
           J=cookies.txt
           get() { curl -sSL -A "$UA" -b $J -c $J --max-time 60 -o "$1" -w "$1 %{http_code} %{size_download}\n" "$2" || echo "$1 FAILED"; }
-          post() { curl -sSL -A "$UA" -b $J -c $J --max-time 60 -X POST -H "X-Requested-With: XMLHttpRequest" -H "Referer: $3" -o "$1" -w "$1 %{http_code} %{size_download}\n" "$2" || echo "$1 FAILED"; }
+          post() { curl -sSL -A "$UA" -b $J -c $J --max-time 60 -X POST -d "" -H "Accept: application/json, text/javascript, */*; q=0.01" -H "Content-Type: application/x-www-form-urlencoded; charset=UTF-8" -H "Origin: https://pagasa.dost.gov.ph" -H "X-Requested-With: XMLHttpRequest" -H "Referer: $3" -o "$1" -w "$1 %{http_code} %{size_download}\n" "$2" || echo "$1 FAILED"; }
           B=https://pagasa.dost.gov.ph
           get minprsd.html $B/regional-forecast/minprsd
           post api-min-isabela.json $B/api/regional/Mindanao/990100000 $B/regional-forecast/minprsd
@@ -31,7 +31,7 @@ jobs:
           CODE=$(grep -oE "value='[0-9]+'" visprsd.html | head -1 | grep -oE "[0-9]+")
           post api-vis-first.json $B/api/regional/Visayas/$CODE $B/regional-forecast/visprsd
           # Without a session cookie, as a phone app would call it
-          curl -sSL -A "$UA" --max-time 60 -X POST -o api-min-isabela-nocookie.json -w "nocookie %{http_code} %{size_download}\n" $B/api/regional/Mindanao/990100000 || true
+          curl -sSL -A "$UA" --max-time 60 -X POST -d "" -o api-min-isabela-nocookie.json -w "nocookie %{http_code} %{size_download}\n" $B/api/regional/Mindanao/990100000 || true
           curl -sSL -A "$UA" --max-time 60 -o api-min-isabela-get.json -w "get %{http_code} %{size_download}\n" $B/api/regional/Mindanao/990100000 || true
           for f in api-*.json; do echo "== $f"; head -c 3000 "$f"; echo; done
       - name: Publish to the samples branch
