@@ -1,0 +1,1 @@
+"The stream or file "/var/www/html/storage/logs/system.log" could not be opened in append mode: failed to open stream: Permission denied" on line 115 of /var/www/html/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php
