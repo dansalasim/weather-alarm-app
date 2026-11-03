@@ -80,6 +80,8 @@ object PlaceDirectory {
             .take(limit).toList()
     }
 
+    fun byCode(ctx: Context, code: String?): PhPlace? = code?.let { c -> all(ctx).firstOrNull { it.code == c } }
+
     /** Closest city/municipality centre to a GPS fix (within [maxKm]). */
     fun nearest(ctx: Context, lat: Double, lon: Double, maxKm: Double = 60.0): PhPlace? =
         all(ctx).minByOrNull { Areas.distanceKm(lat, lon, it.lat, it.lon) }

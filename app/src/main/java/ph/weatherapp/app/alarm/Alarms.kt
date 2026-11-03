@@ -87,23 +87,24 @@ object AlarmScheduler {
     const val ACTION_DISMISS = "ph.weatherapp.ALARM_DISMISS"
     const val EXTRA_ID = "alarm_id"
     const val SNOOZE_MINUTES = 10L
-    private const val PREFETCH_MINUTES = 30L
+    /** Refresh before ringing: once early, and again just before, so PAGASA's 5 AM release is picked up. */
+    private val PREFETCH_MINUTES = listOf(30L to 2, 10L to 8)   // minutes before → request code
 
     fun scheduleAll(ctx: Context) = AlarmPrefs.all(ctx).forEach { schedule(ctx, it) }
 
     fun schedule(ctx: Context, a: AlarmSpec) {
         val am = ctx.getSystemService(AlarmManager::class.java)
         val fire = broadcast(ctx, ACTION_FIRE, a.id, 1)
-        val pre = broadcast(ctx, ACTION_PREFETCH, a.id, 2)
+        val pres = PREFETCH_MINUTES.map { (min, code) -> min to broadcast(ctx, ACTION_PREFETCH, a.id, code) }
         am.cancel(fire)
-        am.cancel(pre)
+        pres.forEach { am.cancel(it.second) }
         if (!a.enabled) return
         val now = ZonedDateTime.now(MANILA)
         val at = nextTrigger(a, now)
         setAlarmClock(ctx, am, at, fire)
-        val preAt = at.minusMinutes(PREFETCH_MINUTES)
-        if (preAt.isAfter(now)) {
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, preAt.toInstant().toEpochMilli(), pre)
+        for ((min, pre) in pres) {
+            val preAt = at.minusMinutes(min)
+            if (preAt.isAfter(now)) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, preAt.toInstant().toEpochMilli(), pre)
         }
     }
 

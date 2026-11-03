@@ -36,7 +36,7 @@ import java.time.temporal.ChronoUnit
 object WeatherRepository {
 
     private const val FEED_ROOT = "https://raw.githubusercontent.com/dansalasim/weather-alarm-app/feed/"
-    /** Cities whose morning PAGASA feed exists (the CDRRMO tasks publish Isabela). */
+    /** Cities with a backup PAGASA copy on GitHub (from the CDRRMO morning tasks). Used only if the phone can't reach PAGASA. */
     private val PAGASA_FEED_AREAS = setOf(Areas.ISABELA.id)
     private const val MAX_CACHE_AGE_HOURS = 36L
 
@@ -80,10 +80,32 @@ object WeatherRepository {
                 else Raw(null, null, live = false)
             }
 
-            val hasPagasa = place.areaId in PAGASA_FEED_AREAS
+            val hasBackup = place.areaId in PAGASA_FEED_AREAS
+            val area = runCatching { PagasaClient.areaFor(context, place) }.getOrNull()
+
+            /** PAGASA read live on the phone; else the last good copy; else the GitHub backup. */
+            fun pagasa(id: String, backupUrl: String?, live: () -> String?): Raw? {
+                val got = runCatching { live() }.getOrNull()
+                if (got != null) {
+                    save(File(dir, "$id.json"), got)
+                    return Raw(got, Instant.now(), live = true)
+                }
+                val f = File(dir, "$id.json")
+                if (f.exists() && fresh(f)) return Raw(f.readText(), Instant.ofEpochMilli(f.lastModified()), live = false)
+                return backupUrl?.let { fetchOrCache(dir, "$id-backup", it) }?.takeIf { it.json != null }
+            }
+
             val sourceRaw = ALL_SOURCES.map { s -> async { s to fetchOrCache(dir, s.id, s.url(place.lat, place.lon)) } }
-            val regional = async { if (hasPagasa) fetchOrCache(dir, "pagasa-regional", "$FEED_ROOT${place.areaId}/regional.json") else null }
-            val heat = async { if (hasPagasa) fetchOrCache(dir, "pagasa-heat", "$FEED_ROOT${place.areaId}/heat.json") else null }
+            val regional = async {
+                pagasa("pagasa-regional", if (hasBackup) "$FEED_ROOT${place.areaId}/regional.json" else null) {
+                    area?.let { PagasaClient.regional(context, place, it, now, timeout) }
+                }
+            }
+            val heat = async {
+                pagasa("pagasa-heat", if (hasBackup) "$FEED_ROOT${place.areaId}/heat.json" else null) {
+                    PagasaClient.heat(place, now, timeout)
+                }
+            }
             val susp = async { if (place.areaId != null) fetchOrCache(shared, "suspensions", FEED_ROOT + "suspensions.json") else null }
 
             val raws = sourceRaw.awaitAll()
@@ -96,7 +118,7 @@ object WeatherRepository {
             val reg = regional.await()
             val ht = heat.await()
             val sp = susp.await()
-            if (hasPagasa && reg?.json == null && ht?.json == null) failures += "PAGASA"
+            if (reg?.json == null && (area != null || hasBackup)) failures += "PAGASA"
             if (sources.isEmpty()) throw IOException("No forecast available. Check your internet connection.")
 
             val used = raws.map { it.second } + listOfNotNull(reg, ht)
@@ -124,8 +146,8 @@ object WeatherRepository {
         val files = ALL_SOURCES.mapNotNull { s -> read(dir, s.id)?.let { s to it } }
         val sources = files.mapNotNull { (s, f) -> runCatching { s.parse(f.readText(), now) }.getOrNull() }
         if (sources.isEmpty()) return null
-        val reg = read(dir, "pagasa-regional")
-        val ht = read(dir, "pagasa-heat")
+        val reg = read(dir, "pagasa-regional") ?: read(dir, "pagasa-regional-backup")
+        val ht = read(dir, "pagasa-heat") ?: read(dir, "pagasa-heat-backup")
         val sp = read(cacheDir(context, null), "suspensions")
         val oldest = (files.map { it.second } + listOfNotNull(reg, ht)).minOf { it.lastModified() }
         compute(

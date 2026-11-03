@@ -266,7 +266,7 @@ fun ForecastScreen(resumes: Int, onEditProfile: () -> Unit) {
                     }.padding(vertical = 2.dp),
                 )
                 Text(
-                    "DOST-PAGASA · ECMWF · GFS · Open-Meteo · MET Norway (CC BY 4.0)" +
+                    "DOST-PAGASA (live) · ECMWF · GFS · Open-Meteo · MET Norway (CC BY 4.0)" +
                         (if (r.fromCache) "\n" + (if (en) "Offline · saved " else "Offline · naka-save ") +
                             r.fetchedAt.format(DateTimeFormatter.ofPattern("h:mm a")) else "") +
                         (if (r.failures.isNotEmpty() && !r.fromCache) "\nNot reached: " + r.failures.joinToString(", ") else ""),

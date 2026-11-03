@@ -18,12 +18,15 @@ import kotlin.coroutines.resume
  * Where the forecast is for. [areaId] is set when the place is a covered city
  * (PAGASA feed + suspension announcements); otherwise it's just coordinates ("Near you").
  */
-data class Place(val name: String, val lat: Double, val lon: Double, val areaId: String?) {
+data class Place(
+    val name: String, val lat: Double, val lon: Double, val areaId: String?,
+    val code: String? = null,   // PSGC code of the city/municipality, when known
+) {
     val cacheKey: String
         get() = areaId ?: String.format(Locale.US, "gps-%.2f-%.2f", lat, lon)
 
     companion object {
-        fun of(a: Area, lat: Double = a.lat, lon: Double = a.lon) = Place(a.name, lat, lon, a.id)
+        fun of(a: Area, lat: Double = a.lat, lon: Double = a.lon) = Place(a.name, lat, lon, a.id, a.psgc)
     }
 }
 
@@ -35,7 +38,9 @@ object PlacePrefs {
         val lat = p.getString("lat", null)?.toDoubleOrNull()
         val lon = p.getString("lon", null)?.toDoubleOrNull()
         if (lat == null || lon == null) return Place.of(Areas.ISABELA)
-        return Place(p.getString("name", null) ?: Areas.ISABELA.name, lat, lon, p.getString("area", null))
+        val area = p.getString("area", null)
+        val code = p.getString("code", null) ?: Areas.byId(area)?.psgc
+        return Place(p.getString("name", null) ?: Areas.ISABELA.name, lat, lon, area, code)
     }
 
     /** true = follow the phone's location; false = a city the user picked. */
@@ -54,7 +59,7 @@ object PlacePrefs {
     /** A city or municipality picked from the full list. Covered cities keep their PAGASA feed and suspensions. */
     fun pickPlace(ctx: Context, p: PhPlace) {
         val area = Areas.byPsgc(p.code)
-        save(ctx, area?.let { Place.of(it) } ?: Place(p.display, p.lat, p.lon, null))
+        save(ctx, area?.let { Place.of(it) } ?: Place(p.display, p.lat, p.lon, null, p.code))
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean("auto", false).apply()
     }
 
@@ -67,8 +72,8 @@ object PlacePrefs {
         val area = Areas.byPsgc(town?.code) ?: Areas.nearest(lat, lon, maxKm = 10.0)
             ?: (if (town == null) Areas.nearest(lat, lon) else null)
         val place = when {
-            area != null -> Place.of(area, lat, lon)
-            town != null -> Place(town.display, lat, lon, null)
+            area != null -> Place.of(area, lat, lon).copy(code = town?.code ?: area.psgc)
+            town != null -> Place(town.display, lat, lon, null, town.code)
             else -> Place("Near you", lat, lon, null)
         }
         save(ctx, place)
@@ -81,6 +86,7 @@ object PlacePrefs {
             .putString("lat", p.lat.toString())
             .putString("lon", p.lon.toString())
             .putString("area", p.areaId)
+            .putString("code", p.code)
             .apply()
     }
 }
