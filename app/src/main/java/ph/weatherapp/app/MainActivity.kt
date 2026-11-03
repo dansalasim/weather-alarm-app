@@ -59,6 +59,7 @@ import ph.weatherapp.core.model.Confidence
 import ph.weatherapp.core.model.HeatIndexLevel
 import ph.weatherapp.core.model.WindowForecast
 import ph.weatherapp.core.model.WindowKind
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 class MainActivity : ComponentActivity() {
@@ -233,6 +234,8 @@ fun ForecastScreen(resumes: Int, onEditProfile: () -> Unit) {
             HeaderButton(Icons.Rounded.Refresh, null) { refresh() }
         }
 
+        FullScreenBanner(lang, resumes)
+
         when (val s = state) {
             is UiState.Loading -> Box(Modifier.fillMaxWidth().height(320.dp), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Teal, strokeWidth = 3.dp)
@@ -241,7 +244,7 @@ fun ForecastScreen(resumes: Int, onEditProfile: () -> Unit) {
             is UiState.Ready -> {
                 val r = s.r
                 if (premium) r.suspensions.forEach { SuspensionCard(it, lang) }
-                urgentWarning(r.current, r.next)?.let { AlertBanner(it, lang) }
+                urgentWarning(r.current, r.next)?.let { (rec, until) -> AlertBanner(rec, lang, until) }
 
                 r.current?.let { HeroCard(it, lang, partial = r.currentIsPartial) }
                 if (r.sixHour) {
@@ -650,21 +653,86 @@ private fun HeaderButton(icon: ImageVector, label: String?, onClick: () -> Unit)
     }
 }
 
+/** Official warning (Signal, rainfall warning, thunderstorm advisory): big, full text, can't be missed. */
 @Composable
-internal fun AlertBanner(rec: Recommendation, lang: Lang) {
+internal fun AlertBanner(rec: Recommendation, lang: Lang, validUntil: ZonedDateTime? = null) {
+    val en = lang == Lang.EN
     val c = if (rec.priority == Priority.URGENT) Red else Amber
-    Row(
+    val (icon, title) = when (rec.code) {
+        "TCWS" -> Icons.Rounded.Cyclone to (if (en) "Tropical cyclone wind signal" else "Babala ng bagyo")
+        "FLOOD", "FLOOD_WATCH" -> Icons.Rounded.Flood to (if (en) "Rainfall warning" else "Babala sa malakas na ulan")
+        "THUNDER" -> Icons.Rounded.Thunderstorm to (if (en) "Thunderstorm advisory" else "Babala sa kulog at kidlat")
+        else -> Icons.Rounded.Warning to (if (en) "Warning" else "Babala")
+    }
+    Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(c.copy(alpha = 0.15f))
-            .border(1.dp, c.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .clip(RoundedCornerShape(18.dp))
+            .background(c.copy(alpha = 0.18f))
+            .border(1.5.dp, c, RoundedCornerShape(18.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Icon(Icons.Rounded.Warning, null, tint = c, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.width(10.dp))
-        Text(rec.short(lang), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(48.dp).background(c, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = Navy, modifier = Modifier.size(30.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title.uppercase(), color = c, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+                Text(rec.short(lang), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, lineHeight = 22.sp)
+            }
+        }
+        Text(rec.text(lang), color = Color.White.copy(alpha = 0.9f), fontSize = 14.sp, lineHeight = 20.sp)
+        Text(
+            "PAGASA" + (validUntil?.let {
+                (if (en) " · until " else " · hanggang ") + it.format(DateTimeFormatter.ofPattern("h:mm a"))
+            } ?: ""),
+            color = c, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+/** Shown above everything while an alarm is on but Android won't let it fill the screen. */
+@Composable
+private fun FullScreenBanner(lang: Lang, resumes: Int) {
+    val ctx = LocalContext.current
+    if (Build.VERSION.SDK_INT < 34) return
+    val off = remember(resumes) {
+        AlarmPrefs.all(ctx).any { it.enabled } && !AlarmNotifier.canUseFullScreen(ctx)
+    }
+    if (!off) return
+    val en = lang == Lang.EN
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Amber.copy(alpha = 0.16f))
+            .border(1.dp, Amber, RoundedCornerShape(16.dp))
+            .padding(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            Icon(Icons.Rounded.AlarmOff, null, tint = Amber, modifier = Modifier.size(26.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(if (en) "Full-screen alarm is off" else "Naka-off ang full-screen na alarm",
+                    color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    if (en) "Alarms will only show a small pop-up, not the forecast card."
+                    else "Maliit na pop-up lang ang lalabas sa alarm, hindi ang buong ulat.",
+                    color = Amber, fontSize = 13.sp, lineHeight = 18.sp,
+                )
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.End) {
+            Button(
+                onClick = {
+                    ctx.startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:" + ctx.packageName)))
+                },
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Amber, contentColor = Navy),
+            ) { Text(if (en) "Turn on" else "I-on", fontWeight = FontWeight.Bold) }
+        }
     }
 }
 
@@ -871,9 +939,11 @@ internal fun greeting(en: Boolean): String = when (java.time.ZonedDateTime.now(p
 }
 
 /** The first official-warning item (Signal, rainfall warning, thunderstorm), if any. */
-internal fun urgentWarning(vararg fs: WindowForecast?): Recommendation? =
-    fs.filterNotNull().flatMap { Recommender.recommend(it) }
-        .firstOrNull { it.code in setOf("TCWS", "FLOOD", "FLOOD_WATCH", "THUNDER") }
+internal fun urgentWarning(vararg fs: WindowForecast?): Pair<Recommendation, ZonedDateTime?>? =
+    fs.filterNotNull().firstNotNullOfOrNull { f ->
+        Recommender.recommend(f).firstOrNull { it.code in setOf("TCWS", "FLOOD", "FLOOD_WATCH", "THUNDER") }
+            ?.let { it to f.pagasa?.validUntil }
+    }
 
 private fun rainLabel(pct: Int, en: Boolean) = when {
     pct >= 80 -> if (en) "Rain very likely" else "Malamang na malamang umulan"

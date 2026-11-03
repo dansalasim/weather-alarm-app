@@ -148,7 +148,7 @@ private fun AlarmScreen(
                 )
             } else {
                 if (Premium.isActive(ctx)) d.suspensions.forEach { SuspensionCard(it, lang) }
-                urgentWarning(d.current, d.next)?.let { AlertBanner(it, lang) }
+                urgentWarning(d.current, d.next)?.let { (rec, until) -> AlertBanner(rec, lang, until) }
                 if (spec.isMain) {
                     d.current?.let { HeroCard(it, lang, partial = d.currentIsPartial) }
                     if (d.sixHour) {
