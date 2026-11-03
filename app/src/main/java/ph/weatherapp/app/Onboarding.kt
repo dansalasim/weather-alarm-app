@@ -130,12 +130,23 @@ fun SetupScreen(editing: Boolean, onDone: () -> Unit) {
     var lguUrl by remember { mutableStateOf(Profile.savedLguUrl(app)) }
     var lguEdited by remember { mutableStateOf(lguUrl.isNotBlank()) }
 
-    // Pre-fill the LGU page for covered cities unless the user typed their own.
+    // Pre-fill the LGU unless the user typed their own: the built-in page for Isabela and
+    // Zamboanga; elsewhere just the name ("Municipal Government of Maluso"), so only the link is left.
     fun prefillLgu(p: Place?) {
         if (lguEdited) return
         val a = Areas.byId(p?.areaId)
-        lguName = a?.lguName ?: ""
-        lguUrl = a?.lguPageUrl ?: ""
+        if (a != null) {
+            lguName = a.lguName
+            lguUrl = a.lguPageUrl ?: ""
+            return
+        }
+        val town = PlaceDirectory.byCode(app, p?.code)
+        lguName = when {
+            town == null -> ""
+            town.isCity -> "City Government of " + town.official.removePrefix("City of ").removeSuffix(" City")
+            else -> "Municipal Government of " + town.official
+        }
+        lguUrl = ""
     }
 
     fun detect() {
@@ -148,7 +159,7 @@ fun SetupScreen(editing: Boolean, onDone: () -> Unit) {
             place = p
             usingLocation = true
             locating = false
-            if (p.areaId == null) locationNote = "PAGASA local data and suspension alerts are available for Isabela City and Zamboanga City so far. You'll still get the forecast for ${p.name}."
+            if (p.areaId == null) locationNote = "Class and work suspension alerts are available for Isabela City and Zamboanga City so far. You'll still get the full forecast, including PAGASA, for ${p.name}."
             prefillLgu(p)
         }
     }
