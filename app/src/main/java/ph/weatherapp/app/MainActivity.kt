@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.widget.Toast
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -148,6 +149,7 @@ fun ForecastScreen(resumes: Int, onEditProfile: () -> Unit) {
 
     var showPlaces by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var showPlans by remember { mutableStateOf(false) }
 
     fun refresh() {
         scope.launch {
@@ -180,6 +182,7 @@ fun ForecastScreen(resumes: Int, onEditProfile: () -> Unit) {
         onSearch = { showPlaces = false; showSearch = true },
         onEditProfile = { showPlaces = false; onEditProfile() },
     )
+    if (showPlans) PlansDialog(lang) { showPlans = false }
     if (showSearch) PlaceSearchDialog(lang, onDismiss = { showSearch = false }) { picked ->
         showSearch = false
         PlacePrefs.pickPlace(ctx, picked)
@@ -226,6 +229,16 @@ fun ForecastScreen(resumes: Int, onEditProfile: () -> Unit) {
                     ?.format(DateTimeFormatter.ofPattern("EEE, MMM d · h:mm a")) ?: ""
                 Text(sub, color = Muted, fontSize = 12.sp)
             }
+            if (!premium) {
+                Surface(onClick = { showPlans = true }, shape = RoundedCornerShape(12.dp), color = Amber.copy(alpha = 0.18f)) {
+                    Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.WorkspacePremium, "Premium", tint = Amber, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Premium", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+            }
             HeaderButton(Icons.Rounded.Translate, if (en) "FIL" else "EN") {
                 lang = if (en) Lang.FIL else Lang.EN
                 AlarmPrefs.setLang(ctx, lang)
@@ -251,6 +264,7 @@ fun ForecastScreen(resumes: Int, onEditProfile: () -> Unit) {
                     if (r.later.isNotEmpty()) BlocksCard(r.later, lang)
                 } else {
                     r.next?.let { NextCard(it, lang) }
+                    if (!premium) PremiumTeaser(lang) { showPlans = true }
                 }
 
                 if (premium) Profile.lgu(ctx, r.place.areaId)?.let { (name, url) -> LguCard(name, url, lang) }
@@ -459,17 +473,9 @@ private fun PremiumCard(premium: Boolean, lang: Lang, onPreview: (Boolean) -> Un
             if (!premium) Text("₱${Plan.MONTHLY.pricePhp}/" + (if (en) "mo" else "buwan"), color = Amber, fontWeight = FontWeight.SemiBold)
         }
         if (!premium) {
-            Perk(Icons.Rounded.Schedule, if (en) "6-hour forecast blocks" else "Ulat kada 6 na oras")
-            Perk(Icons.Rounded.RecordVoiceOver, if (en) "Alarm reads the forecast aloud" else "Binabasa ng alarm ang ulat")
-            Perk(Icons.Rounded.Block, if (en) "No ads" else "Walang ads")
-            Perk(Icons.Rounded.Campaign, if (en) "Class & work suspension alerts" else "Abiso ng suspensyon ng klase at trabaho")
-            Perk(Icons.Rounded.AccountBalance, if (en) "LGU announcements page" else "Pahina ng anunsyo ng LGU")
-            Perk(Icons.Rounded.Timeline, if (en) "Soon: hourly & current weather" else "Malapit na: kada oras at kasalukuyang panahon")
-            Text(
-                (if (en) "or ₱${Plan.ANNUAL.pricePhp}/year · ${Plan.ANNUAL.trialDays}-day free trial · save ₱${Entitlements.annualSavingsPhp()}"
-                 else "o ₱${Plan.ANNUAL.pricePhp}/taon · ${Plan.ANNUAL.trialDays} araw na libreng subok · tipid ₱${Entitlements.annualSavingsPhp()}"),
-                color = Muted, fontSize = 12.sp,
-            )
+            PremiumPerks(en)
+            Spacer(Modifier.height(2.dp))
+            PlanButtons(lang)
         }
         // Testing only, until Google Play Billing is connected.
         Row(
@@ -490,6 +496,119 @@ private fun PremiumCard(premium: Boolean, lang: Lang, onPreview: (Boolean) -> Un
                 colors = SwitchDefaults.colors(checkedThumbColor = Navy, checkedTrackColor = Amber),
             )
         }
+    }
+}
+
+/** The two plans. Tapping one starts Google Play checkout once the app is on Play Store. */
+@Composable
+private fun PlanButtons(lang: Lang) {
+    val ctx = LocalContext.current
+    val en = lang == Lang.EN
+    fun choose(plan: Plan) {
+        // TODO(billing): launch Google Play Billing for plan.productId when the Play account is ready.
+        Toast.makeText(
+            ctx,
+            if (en) "Subscriptions open when the app is on Google Play." else "Magbubukas ang subscription kapag nasa Google Play na ang app.",
+            Toast.LENGTH_LONG,
+        ).show()
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Annual first: best value, with the free trial
+        Button(
+            onClick = { choose(Plan.ANNUAL) },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Amber, contentColor = Navy),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("₱${Plan.ANNUAL.pricePhp} / " + (if (en) "year" else "taon"), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    if (en) "${Plan.ANNUAL.trialDays} days free, then ₱${Plan.ANNUAL.pricePhp}"
+                    else "${Plan.ANNUAL.trialDays} araw na libre, saka ₱${Plan.ANNUAL.pricePhp}",
+                    fontSize = 12.sp,
+                )
+            }
+            Text(
+                (if (en) "Save ₱" else "Tipid ₱") + Entitlements.annualSavingsPhp(),
+                fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Amber,
+                modifier = Modifier.background(Navy, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 3.dp),
+            )
+        }
+        OutlinedButton(
+            onClick = { choose(Plan.MONTHLY) },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+            shape = RoundedCornerShape(14.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Amber.copy(alpha = 0.6f)),
+        ) {
+            Text("₱${Plan.MONTHLY.pricePhp} / " + (if (en) "month" else "buwan"), color = Amber, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Text(
+            if (en) "Cancel anytime in Google Play." else "Puwedeng i-cancel kahit kailan sa Google Play.",
+            color = Muted, fontSize = 11.sp, modifier = Modifier.fillMaxWidth(),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+    }
+}
+
+/** Opened from the header button or the "See Premium" link. */
+@Composable
+private fun PlansDialog(lang: Lang, onDismiss: () -> Unit) {
+    val en = lang == Lang.EN
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(22.dp))
+                .background(CardNavy)
+                .border(1.dp, Amber.copy(alpha = 0.3f), RoundedCornerShape(22.dp))
+                .verticalScroll(rememberScrollState())
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.WorkspacePremium, null, tint = Amber, modifier = Modifier.size(26.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (en) "Go Premium" else "Mag-Premium", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, if (en) "Close" else "Isara", tint = Muted) }
+            }
+            PremiumPerks(en)
+            Spacer(Modifier.height(4.dp))
+            PlanButtons(lang)
+        }
+    }
+}
+
+@Composable
+private fun PremiumPerks(en: Boolean) {
+    Perk(Icons.Rounded.Schedule, if (en) "6-hour forecast blocks" else "Ulat kada 6 na oras")
+    Perk(Icons.Rounded.RecordVoiceOver, if (en) "Alarm reads the forecast aloud" else "Binabasa ng alarm ang ulat")
+    Perk(Icons.Rounded.Block, if (en) "No ads" else "Walang ads")
+    Perk(Icons.Rounded.Campaign, if (en) "Class and work suspension alerts" else "Abiso ng suspensyon ng klase at trabaho")
+    Perk(Icons.Rounded.AccountBalance, if (en) "LGU announcements page" else "Pahina ng anunsyo ng LGU")
+    Perk(Icons.Rounded.Timeline, if (en) "Soon: hourly and current weather" else "Malapit na: kada oras at kasalukuyang panahon")
+}
+
+/** One line under the free 12-hour forecast pointing to what Premium adds. */
+@Composable
+private fun PremiumTeaser(lang: Lang, onClick: () -> Unit) {
+    val en = lang == Lang.EN
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Amber.copy(alpha = 0.10f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Lock, null, tint = Amber, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(
+            if (en) "6-hour blocks, voice alarm and suspension alerts" else "Ulat kada 6 na oras, boses sa alarm at abiso ng suspensyon",
+            fontSize = 13.sp, modifier = Modifier.weight(1f),
+        )
+        Text(if (en) "See Premium" else "Tingnan", color = Amber, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Icon(Icons.Rounded.ChevronRight, null, tint = Amber, modifier = Modifier.size(18.dp))
     }
 }
 
