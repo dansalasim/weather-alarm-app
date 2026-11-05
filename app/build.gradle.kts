@@ -12,7 +12,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "ph.weatherapp.app"
+        applicationId = "com.dansalasim.weatheralarmph"
         minSdk = 26
         targetSdk = 35
         versionCode = buildNumber
