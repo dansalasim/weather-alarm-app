@@ -24,8 +24,9 @@ import java.util.Locale
 object Premium {
     private const val FILE = "premium"
 
+    /** Premium is on. Until Google Play Billing is connected, only test builds can turn it on (preview switch). */
     fun isActive(ctx: Context): Boolean =
-        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean("preview", false)
+        BuildConfig.PREMIUM_PREVIEW && ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean("preview", false)
 
     fun setPreview(ctx: Context, on: Boolean) {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean("preview", on).apply()

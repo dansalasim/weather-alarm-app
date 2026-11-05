@@ -31,3 +31,21 @@ jobs:
           name: weather-alarm-apk-${{ github.run_number }}
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      # Google Play upload bundle (.aab), signed with the upload key.
+      # Runs only when the UPLOAD_KEY_PASSWORD secret has been added to the repository.
+      - name: Build Play Store bundle
+        env:
+          UPLOAD_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
+        if: env.UPLOAD_KEY_PASSWORD != ''
+        run: ./gradlew :app:bundleRelease --stacktrace
+
+      - name: Upload bundle
+        env:
+          UPLOAD_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
+        if: env.UPLOAD_KEY_PASSWORD != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: weather-alarm-ph-playstore-${{ github.run_number }}
+          path: app/build/outputs/bundle/release/app-release.aab
+          retention-days: 90

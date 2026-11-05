@@ -477,8 +477,8 @@ private fun PremiumCard(premium: Boolean, lang: Lang, onPreview: (Boolean) -> Un
             Spacer(Modifier.height(2.dp))
             PlanButtons(lang)
         }
-        // Testing only, until Google Play Billing is connected.
-        Row(
+        // Testing only, until Google Play Billing is connected. Not in the Play Store version.
+        if (BuildConfig.PREMIUM_PREVIEW) Row(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))

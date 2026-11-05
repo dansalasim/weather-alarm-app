@@ -9,18 +9,20 @@ val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
 android {
     namespace = "ph.weatherapp.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.dansalasim.weatheralarmph"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = buildNumber
         versionName = "0.1.$buildNumber"
     }
 
-    // A fixed debug key, so each new test APK installs over the previous one.
-    // NOT used for the Play Store; release signing comes later.
+    // Debug: a fixed key, so each test APK installs over the previous one.
+    // Release (Google Play): the upload key, keystore/upload.p12, encrypted with a password
+    // that exists only in the GitHub secret UPLOAD_KEY_PASSWORD and with Dan.
+    val uploadPassword = System.getenv("UPLOAD_KEY_PASSWORD")
     signingConfigs {
         getByName("debug") {
             storeFile = rootProject.file("keystore/debug.keystore")
@@ -28,9 +30,31 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        if (uploadPassword != null) create("upload") {
+            storeFile = rootProject.file("keystore/upload.p12")
+            storeType = "PKCS12"
+            storePassword = uploadPassword
+            keyAlias = "upload"
+            keyPassword = uploadPassword
+        }
     }
 
-    buildFeatures { compose = true }
+    buildTypes {
+        getByName("debug") {
+            buildConfigField("boolean", "PREMIUM_PREVIEW", "true")
+        }
+        getByName("release") {
+            // No free "Premium preview" switch in the Play Store version.
+            buildConfigField("boolean", "PREMIUM_PREVIEW", "false")
+            isMinifyEnabled = false
+            if (uploadPassword != null) signingConfig = signingConfigs.getByName("upload")
+        }
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
