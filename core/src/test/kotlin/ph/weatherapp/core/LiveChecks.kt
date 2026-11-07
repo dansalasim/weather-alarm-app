@@ -40,7 +40,7 @@ fun main() {
     t("coastal", r?.coastalWaters == "Slight to Moderate")
     val adv = feed.toAdvisory(ForecastWindow(WindowKind.DAY, mnl(3, 6), mnl(3, 18)))
     t("advisory valid at 6 AM", adv.isValidAt(mnl(3, 6)))
-    t("PAGASA calls rain likely", adv.forecastRainLikely == true)
+    t("PAGASA everyday wording → rain possible, not committed", adv.forecastRainLikely == null)
 
     // NCR uses Manila local time with no zone ("2026-11-03 03:58:..")
     val ncr = PagasaFeedJson.parse("ncr", PagasaLive.regionalFeedJson(res("api-ncr-first.json"), Warnings(), now), null, now).regional
