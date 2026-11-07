@@ -123,6 +123,8 @@ object WeatherRepository {
 
             val used = raws.map { it.second } + listOfNotNull(reg, ht)
             val oldest = used.mapNotNull { it.time }.minOrNull() ?: Instant.now()
+            AccuracyStore.logMorning(context, now, place, sources,
+                PagasaFeedJson.parse(place.areaId ?: "", reg?.json, ht?.json, now))
             compute(
                 now = now,
                 place = place,
@@ -150,6 +152,8 @@ object WeatherRepository {
         val ht = read(dir, "pagasa-heat") ?: read(dir, "pagasa-heat-backup")
         val sp = read(cacheDir(context, null), "suspensions")
         val oldest = (files.map { it.second } + listOfNotNull(reg, ht)).minOf { it.lastModified() }
+        AccuracyStore.logMorning(context, now, place, sources,
+            PagasaFeedJson.parse(place.areaId ?: "", reg?.readText(), ht?.readText(), now))
         compute(
             now = now,
             place = place,

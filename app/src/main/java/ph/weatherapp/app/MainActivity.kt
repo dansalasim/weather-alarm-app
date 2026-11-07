@@ -268,6 +268,7 @@ fun ForecastScreen(resumes: Int, onEditProfile: () -> Unit) {
                 }
 
                 if (premium) Profile.lgu(ctx, r.place.areaId)?.let { (name, url) -> LguCard(name, url, lang) }
+                AccuracyCard(lang, resumes)
                 AlarmsSection(lang, resumes)
                 PremiumCard(premium, lang) { setPremium(it) }
 
@@ -713,6 +714,88 @@ private fun LguCard(lguName: String, lguUrl: String, lang: Lang) {
             if (en) "Suspensions, advisories and other official updates" else "Suspensyon, abiso at iba pang opisyal na balita",
             color = Muted, fontSize = 12.sp,
         )
+    }
+}
+
+
+// ---------- Accuracy log ("Umulan ba?") ----------
+@Composable
+private fun AccuracyCard(lang: Lang, resumes: Int) {
+    val ctx = LocalContext.current
+    val en = lang == Lang.EN
+    var version by remember { mutableIntStateOf(0) }
+    val entries = remember(version, resumes) { AccuracyStore.all(ctx) }
+    if (entries.isEmpty()) return
+    val now = ZonedDateTime.now(ph.weatherapp.core.engine.MANILA)
+    val ask = ph.weatherapp.core.log.AccuracyLog.toAsk(entries, now)
+    val scores = ph.weatherapp.core.log.AccuracyLog.scores(entries)
+    val answered = entries.count { it.rained != null }
+    if (ask == null && answered == 0) return
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(CardNavy).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.FactCheck, null, tint = Teal, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (en) "Forecast check" else "Tsek ng forecast", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
+        if (ask != null) {
+            val isToday = ask.date == now.toLocalDate()
+            val day = if (isToday) (if (en) "today" else "ngayong araw")
+                      else ask.date.format(DateTimeFormatter.ofPattern("EEE, MMM d"))
+            Text(
+                if (en) "Did it rain in ${ask.placeName} $day (6 AM–6 PM)?"
+                else "Umulan ba sa ${ask.placeName} $day (6 AM–6 PM)?",
+                fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                (if (en) "This morning's forecast: " else "Forecast kaninang umaga: ") + "${ask.appRainPct}%" +
+                    (ask.pagasaSky?.let { " · PAGASA: $it" } ?: ""),
+                color = Muted, fontSize = 12.sp, lineHeight = 16.sp,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = { AccuracyStore.answer(ctx, ask.date, true); version++ },
+                    colors = ButtonDefaults.buttonColors(containerColor = Teal, contentColor = Navy),
+                    modifier = Modifier.weight(1f),
+                ) { Text(if (en) "Yes, it rained" else "Oo, umulan", fontWeight = FontWeight.Bold) }
+                Button(
+                    onClick = { AccuracyStore.answer(ctx, ask.date, false); version++ },
+                    colors = ButtonDefaults.buttonColors(containerColor = Tile, contentColor = Color.White),
+                    modifier = Modifier.weight(1f),
+                ) { Text(if (en) "No" else "Hindi", fontWeight = FontWeight.Bold) }
+            }
+        }
+        if (scores.isNotEmpty()) {
+            Text(
+                if (en) "Correct rain calls so far ($answered ${if (answered == 1) "day" else "days"})"
+                else "Tamang hula ng ulan ($answered araw)",
+                color = Muted, fontSize = 12.sp,
+            )
+            scores.forEach { sc ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(sc.name, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Text("${sc.correct}/${sc.days}", fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                        color = if (sc.pct >= 70) Teal else if (sc.pct >= 50) Amber else Orange)
+                    Text(
+                        "  " + (if (en) "${sc.falseAlarms} false alarm, ${sc.misses} missed"
+                                else "${sc.falseAlarms} maling babala, ${sc.misses} di nahulaan"),
+                        color = Faint, fontSize = 11.sp,
+                    )
+                }
+            }
+            Text(
+                if (en) "Copy log" else "Kopyahin ang log",
+                color = Teal.copy(alpha = 0.85f), fontSize = 12.sp,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable {
+                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(ph.weatherapp.core.log.AccuracyLog.toJson(AccuracyStore.all(ctx))))
+                    Toast.makeText(ctx, if (en) "Log copied" else "Nakopya ang log", Toast.LENGTH_SHORT).show()
+                }.padding(vertical = 2.dp),
+            )
+        }
     }
 }
 

@@ -78,4 +78,5 @@ data class WindowForecast(
     val sourcesUsed: List<String>,
     val pagasaOverrides: List<String>,   // human-readable notes on what PAGASA changed
     val pagasa: PagasaAdvisory?,
+    val sourceRain: Map<String, Int> = emptyMap(),   // each source's own rain chance, for the accuracy log
 )

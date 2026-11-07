@@ -102,6 +102,7 @@ class Consolidator(private val cfg: Config = Config()) {
             sourcesUsed = summaries.map { it.sourceId },
             pagasaOverrides = notes,
             pagasa = advisory,
+            sourceRain = summaries.mapNotNull { sm -> sm.rainMax?.let { sm.sourceId to it } }.toMap(),
         )
     }
 
