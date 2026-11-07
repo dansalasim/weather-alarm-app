@@ -103,7 +103,7 @@ object AccuracyLog {
             add(buildJsonObject {
                 put("date", e.date.toString())
                 put("place", e.placeName)
-                put("recordedAt", e.recordedAt.toOffsetDateTime().toString())
+                put("recordedAt", e.recordedAt.toString())
                 put("appRainPct", e.appRainPct)
                 put("sourceRainPct", buildJsonObject { e.sourceRainPct.forEach { (k, v) -> put(k, v) } })
                 put("pagasaSky", e.pagasaSky)
