@@ -39,7 +39,7 @@ fun main() {
     val today = ForecastWindow(WindowKind.DAY, mnl(2, 6), mnl(2, 18))
     val adv = feed.toAdvisory(today)
     t("stale heat index (Nov 1) is NOT used for Nov 2", adv.heatIndexForecastC == null)
-    t("'rainshowers or thunderstorm' → rain likely", adv.forecastRainLikely == true)
+    t("'partly cloudy … rainshowers or thunderstorm' → rain possible", adv.forecastRainLikely == null && adv.skyCondition != null)
     t("PAGASA wording kept for the card", adv.skyCondition?.startsWith("Partly cloudy") == true)
 
     // Same-day heat file: only the hours left in the window count
