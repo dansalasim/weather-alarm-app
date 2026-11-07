@@ -14,6 +14,8 @@ data class HourlyPoint(
     val windKph: Double?,
     val gustKph: Double?,
     val humidityPct: Int?,
+    /** Rain (mm) in this hour for each ensemble run, when the source is an ensemble. */
+    val memberPrecipMm: List<Double>? = null,
 )
 
 /** All hourly points from one provider (Open-Meteo, MET Norway, OpenWeatherMap...). */
@@ -21,6 +23,8 @@ data class SourceForecast(
     val sourceId: String,
     val fetchedAt: ZonedDateTime,
     val points: List<HourlyPoint>,
+    /** False when this source's rain chance shouldn't be counted (e.g. it repeats another source). */
+    val rainUsable: Boolean = true,
 )
 
 /** PAGASA rainfall warning colors (Heavy Rainfall Warning system). */

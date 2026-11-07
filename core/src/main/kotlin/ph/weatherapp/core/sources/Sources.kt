@@ -49,7 +49,9 @@ object OpenMeteo : WeatherSource {
                 humidityPct = hum.num(i)?.toInt(),
             )
         }
-        return SourceForecast(id, fetchedAt, points)
+        // Its rain chance comes from the GFS ensemble (any 0.1 mm counts), which we already
+        // read directly, so it would count GFS twice. Keep its temperature and wind only.
+        return SourceForecast(id, fetchedAt, points, rainUsable = false)
     }
 }
 
@@ -87,14 +89,15 @@ object MetNorway : WeatherSource {
 
 /**
  * A global model's ENSEMBLE via Open-Meteo: the model is run many times with slightly different
- * starting conditions. Rain chance = share of runs with at least [rainThresholdMm] of rain that hour.
+ * starting conditions. Hourly rain chance = share of runs with at least [rainThresholdMm] that hour;
+ * each run's hourly rain is also kept so the engine can judge a whole block at once.
  * Temperature, humidity and wind come from the control run.
  * These are the same models Windy displays (ECMWF is Windy's default).
  */
 class OpenMeteoEnsemble(
     override val id: String,
     private val model: String,
-    private val rainThresholdMm: Double = 0.1,
+    private val rainThresholdMm: Double = 0.5,
 ) : WeatherSource {
 
     override fun url(lat: Double, lon: Double) =
@@ -123,6 +126,7 @@ class OpenMeteoEnsemble(
                 windKph = wind.num(i),
                 gustKph = gust.num(i),
                 humidityPct = hum.num(i)?.toInt(),
+                memberPrecipMm = if (precipRuns.isEmpty()) null else precipRuns.map { it.num(i) ?: 0.0 },
             )
         }
         return SourceForecast(id, fetchedAt, points)

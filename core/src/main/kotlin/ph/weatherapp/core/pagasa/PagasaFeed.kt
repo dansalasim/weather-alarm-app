@@ -65,7 +65,8 @@ object PagasaText {
      * Reads PAGASA's standard forecast phrases. Order matters: the strongest wording is checked first.
      *   "Cloudy skies with moderate to heavy rains"                          → VERY_LIKELY
      *   "Cloudy skies with rainshowers and thunderstorms"                    → LIKELY
-     *   "Partly cloudy skies to at times cloudy with rainshowers or thunderstorms" → LIKELY
+     *   "Partly cloudy skies to at times cloudy with rainshowers or thunderstorms" → POSSIBLE
+     *       (PAGASA's everyday wording: mostly fair, with some showers somewhere in the region)
      *   "Partly cloudy to cloudy skies with isolated rainshowers or thunderstorms" → POSSIBLE
      *   "...with localized thunderstorms" / "isolated light rains"           → POSSIBLE
      *   "Partly cloudy to cloudy skies" (no rain words)                     → UNLIKELY
@@ -77,6 +78,7 @@ object PagasaText {
             rainWords.none { it in s } -> RainOutlook.UNLIKELY
             "heavy" in s || "intense" in s || "torrential" in s -> RainOutlook.VERY_LIKELY
             "isolated" in s || "localized" in s || "localised" in s -> RainOutlook.POSSIBLE
+            "partly cloudy" in s && "scattered" !in s && "widespread" !in s -> RainOutlook.POSSIBLE
             else -> RainOutlook.LIKELY   // "rainshowers and/or thunderstorms", "scattered", "light rains"
         }
     }

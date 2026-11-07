@@ -7,8 +7,9 @@ import kotlin.math.roundToInt
  * Turns several sources' hourly data into one 12-hour window forecast.
  *
  * Steps:
- *  1. For each source, summarize its hours inside the window
- *     (max rain chance, min/max temp, max wind/gust, max heat index).
+ *  1. For each source, summarize its hours inside the window. Rain chance for an ensemble =
+ *     share of runs with at least [Config.blockRainMm] of rain in the WHOLE block (so drizzle
+ *     and single wet hours don't count); other sources use their highest hourly chance.
  *  2. Combine sources with the MEDIAN, so one wild source can't drag the result.
  *  3. Measure how much the sources agree → confidence.
  *  4. Apply PAGASA: warnings set minimum values, and when the sources
@@ -18,6 +19,7 @@ class Consolidator(private val cfg: Config = Config()) {
 
     data class Config(
         val minHoursPerSource: Int = 6,     // ignore a source covering < half the window
+        val blockRainMm: Double = 2.0,      // an ensemble run "rains" if it totals this much in the block
         val highAgreementRainSpread: Int = 20,
         val lowAgreementRainSpread: Int = 40,
         val highAgreementTempSpread: Double = 2.0,
@@ -79,7 +81,11 @@ class Consolidator(private val cfg: Config = Config()) {
                 when (advisory.forecastRainLikely) {
                     true -> if (rain < 60) { rain = 60; notes += "Sources disagree; following PAGASA (rain likely)" }
                     false -> if (rain > 30) { rain = 30; notes += "Sources disagree; following PAGASA (rain unlikely)" }
-                    null -> {}
+                    // PAGASA says rain is only possible ("isolated", "partly cloudy … rainshowers or
+                    // thunderstorms"): don't let the models call it a near-certainty.
+                    null -> if (advisory.skyCondition != null && rain > 60) {
+                        rain = 60; notes += "Sources disagree; following PAGASA (rain possible)"
+                    }
                 }
             }
         }
@@ -107,13 +113,23 @@ class Consolidator(private val cfg: Config = Config()) {
         }.maxOrNull()
         return SourceSummary(
             sourceId = src.sourceId,
-            rainMax = pts.mapNotNull { it.rainChancePct }.maxOrNull(),
+            rainMax = if (!src.rainUsable) null else blockRainChance(pts) ?: pts.mapNotNull { it.rainChancePct }.maxOrNull(),
             tempMin = pts.mapNotNull { it.tempC }.minOrNull(),
             tempMax = pts.mapNotNull { it.tempC }.maxOrNull(),
             windMax = pts.mapNotNull { it.windKph }.maxOrNull(),
             gustMax = pts.mapNotNull { it.gustKph }.maxOrNull(),
             heatIndexMax = heat,
         )
+    }
+
+    /** Share of ensemble runs whose total rain over the block reaches [Config.blockRainMm]. */
+    private fun blockRainChance(pts: List<HourlyPoint>): Int? {
+        val runs = pts.mapNotNull { it.memberPrecipMm }
+        if (runs.size < cfg.minHoursPerSource) return null
+        val n = runs.minOf { it.size }
+        if (n == 0) return null
+        val wet = (0 until n).count { m -> runs.sumOf { it[m] } >= cfg.blockRainMm }
+        return Math.round(100.0 * wet / n).toInt()
     }
 
     private fun confidenceOf(s: List<SourceSummary>): Confidence {

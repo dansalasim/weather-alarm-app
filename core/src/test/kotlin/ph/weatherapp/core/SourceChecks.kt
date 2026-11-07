@@ -50,7 +50,7 @@ fun main() {
     val day = Windows.current(ZonedDateTime.of(2026, 11, 2, 9, 0, 0, 0, MANILA))
     val f = Consolidator().consolidate(day, listOf(a, b), null)!!
     expect("engine uses both sources", f.sourcesUsed == listOf("open-meteo", "met-norway"))
-    expect("day rain chance = median of 65 and 70", f.rainChancePct == 68)
+    expect("Open-Meteo's rain chance not counted (it repeats GFS); MET's 70 used", f.rainChancePct == 70)
     println("   Day forecast: rain ${f.rainChancePct}%, ${f.tempMinC}–${f.tempMaxC}°C, wind ${f.windMaxKph} km/h, HI ${f.heatIndexMaxC}°C, ${f.confidence}")
 
     // --- Ensemble (ECMWF/GFS shape): control + members; rain chance = share of wet runs ---
@@ -70,6 +70,19 @@ fun main() {
     expect("ensemble: 12 points from 6 AM", e.points.size == 12 && e.points[0].time.hour == 6)
     expect("ensemble: dry hour → 0%", e.points[0].rainChancePct == 0)
     expect("ensemble: 3 of 10 runs wet → 30%", e.points[7].rainChancePct == 30)
+    expect("ensemble: each run's hourly rain kept", e.points[7].memberPrecipMm?.size == 10)
+
+    // Block rain chance: a run must total ≥ 2 mm over the whole block
+    val blk = Windows.current(ZonedDateTime.of(2026, 11, 2, 6, 0, 0, 0, MANILA))
+    fun ensSource(perRun: (Int) -> List<Double>) = SourceForecast("ecmwf", now, (0 until 12).map { h ->
+        HourlyPoint(ZonedDateTime.of(2026, 11, 2, 6 + h, 0, 0, 0, MANILA), null, 30.0, 9.0, null, 75,
+            memberPrecipMm = (0 until 10).map { perRun(it)[h] }) })
+    val drizzle = ensSource { (0 until 12).map { 0.1 } }              // every run drizzles all day: 1.2 mm
+    val showers = ensSource { m -> (0 until 12).map { if (m < 4 && it == 7) 5.0 else 0.0 } }
+    expect("drizzle in every run (1.2 mm total) → 0%, not 100%",
+        Consolidator().consolidate(blk, listOf(drizzle), null)!!.rainChancePct == 0)
+    expect("4 of 10 runs with a 5 mm shower → 40%",
+        Consolidator().consolidate(blk, listOf(showers), null)!!.rainChancePct == 40)
     expect("ensemble: temperature from control run, not members", e.points[0].tempC == 29.5)
     expect("ensemble: missing gusts stay empty", e.points[0].gustKph == null && e.points[0].windKph == 9.0)
     expect("four sources registered", ALL_SOURCES.map { it.id } == listOf("ecmwf", "gfs", "open-meteo", "met-norway"))

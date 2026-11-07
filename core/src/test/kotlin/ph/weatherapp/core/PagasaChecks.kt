@@ -14,8 +14,10 @@ private fun at(m: Int, d: Int, h: Int, min: Int = 0) = ZonedDateTime.of(2026, m,
 
 fun main() {
     // --- PAGASA wording → rain outlook ---
-    ok("Oct 28 'partly cloudy … with rainshowers or thunderstorms' → LIKELY",
-        PagasaText.rainOutlook("Partly cloudy skies to at times cloudy with rainshowers or thunderstorms") == RainOutlook.LIKELY)
+    ok("Oct 28 'partly cloudy … with rainshowers or thunderstorms' → POSSIBLE (everyday wording)",
+        PagasaText.rainOutlook("Partly cloudy skies to at times cloudy with rainshowers or thunderstorms") == RainOutlook.POSSIBLE)
+    ok("'partly cloudy … with scattered rainshowers' → LIKELY",
+        PagasaText.rainOutlook("Partly cloudy to cloudy skies with scattered rainshowers and thunderstorms") == RainOutlook.LIKELY)
     ok("Oct 30 'cloudy skies with rainshowers and thunderstorms' → LIKELY",
         PagasaText.rainOutlook("Cloudy skies with rainshowers and thunderstorms") == RainOutlook.LIKELY)
     ok("'isolated rainshowers or thunderstorms' → POSSIBLE",
@@ -40,7 +42,7 @@ fun main() {
     ok("Oct 28 heat index peak = 34°C", oct28.heatIndex?.peakC == 34)
     ok("Oct 28 peak hour = 10 AM (first of the 34°C hours)", oct28.heatIndex?.peakHour == 10)
     val adv = oct28.toAdvisory()
-    ok("Oct 28 → PAGASA says rain likely", adv.forecastRainLikely == true)
+    ok("Oct 28 → PAGASA says rain possible (not committing)", adv.forecastRainLikely == null)
     ok("Oct 28 → heat index 34 → Extreme Caution", HeatIndex.level(adv.heatIndexForecastC!!) == HeatIndexLevel.EXTREME_CAUTION)
 
     // Gridded sources that disagree badly: PAGASA should settle it
@@ -48,10 +50,12 @@ fun main() {
     fun src(id: String, rain: Int) = SourceForecast(id, at(10, 28, 4),
         (0 until 12).map { HourlyPoint(at(10, 28, 6).plusHours(it.toLong()), rain, 31.0, 12.0, 18.0, 70) })
     val f = Consolidator().consolidate(day, listOf(src("open-meteo", 15), src("met-no", 70), src("owm", 35)), adv)!!
-    ok("Oct 28 consolidated: rain raised to ≥60% by PAGASA", f.rainChancePct >= 60)
+    ok("Oct 28 consolidated: 'possible' doesn't push rain up (median 35%)", f.rainChancePct == 35)
+    val wetModels = Consolidator().consolidate(day, listOf(src("a", 95), src("b", 30), src("c", 90)), adv)!!
+    ok("Oct 28: models at 90% but PAGASA only 'possible' → capped at 60%", wetModels.rainChancePct == 60)
     ok("Oct 28 consolidated: heat index uses iHeatMAP 34°C", f.heatIndexMaxC == 34)
     val recs = Recommender.recommend(f).map { it.code }
-    ok("Oct 28 advice includes umbrella and heat", recs.any { it.startsWith("UMBRELLA") } && recs.contains("HEAT_HIGH"))
+    ok("Oct 28 advice includes heat, no umbrella at 35%", recs.contains("HEAT_HIGH") && recs.none { it.startsWith("UMBRELLA") })
     println("   Oct 28 advice: $recs  |  notes: ${f.pagasaOverrides}")
 
     // --- Oct 22: heat only; peak 33 at 11 AM ---
