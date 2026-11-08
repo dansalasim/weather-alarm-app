@@ -958,18 +958,18 @@ private fun FullScreenBanner(lang: Lang, resumes: Int) {
 
 private data class HeatStyle(val bg: Color, val fg: Color, val en: String, val fil: String, val effectEn: String, val effectFil: String, val range: String)
 
-/** Colors as in the CDRRMO Heat Index Advisory; effects as worded by PAGASA. */
+/** Colors and effects exactly as on PAGASA's "Payong PAGASA sa tag-init" heat index chart. */
 private fun heatStyle(level: HeatIndexLevel): HeatStyle = when (level) {
-    HeatIndexLevel.CAUTION -> HeatStyle(Color(0xFFFDE047), Color(0xFF2B2600), "Caution", "Mag-ingat", 
+    HeatIndexLevel.CAUTION -> HeatStyle(Color(0xFFFFFF00), Color(0xFF1A1A00), "Caution", "Mag-ingat", 
         "Fatigue is possible with prolonged exposure and activity. Continuing activity could lead to heat cramps.",
         "Posibleng mapagod sa matagal na pagkakabilad at gawain. Kapag itinuloy, maaaring pulikatin dahil sa init.", "27–32°C")
-    HeatIndexLevel.EXTREME_CAUTION -> HeatStyle(Color(0xFFF59E0B), Color(0xFF2A1600), "Extreme caution", "Labis na pag-iingat",
+    HeatIndexLevel.EXTREME_CAUTION -> HeatStyle(Color(0xFFFFCC00), Color(0xFF1F1400), "Extreme caution", "Labis na pag-iingat",
         "Heat cramps and heat exhaustion are possible. Continuing activity could lead to heat stroke.",
         "Posible ang pulikat at pagkahapo dahil sa init. Kapag itinuloy ang gawain, maaaring ma-heat stroke.", "33–41°C")
-    HeatIndexLevel.DANGER -> HeatStyle(Color(0xFFEA580C), Color.White, "Danger", "Panganib",
+    HeatIndexLevel.DANGER -> HeatStyle(Color(0xFFFF6600), Color.White, "Danger", "Panganib",
         "Heat cramps and heat exhaustion are likely; heat stroke is probable with continued exposure.",
         "Malamang ang pulikat at pagkahapo dahil sa init; posibleng ma-heat stroke kapag patuloy na nakabilad.", "42–51°C")
-    HeatIndexLevel.EXTREME_DANGER -> HeatStyle(Color(0xFFDC2626), Color.White, "Extreme danger", "Matinding panganib",
+    HeatIndexLevel.EXTREME_DANGER -> HeatStyle(Color(0xFFCC0000), Color.White, "Extreme danger", "Matinding panganib",
         "Heat stroke is imminent.", "Napipintong ma-heat stroke.", "52°C and above")
 }
 
