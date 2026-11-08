@@ -379,17 +379,28 @@ private fun AlarmsSection(lang: Lang, resumes: Int) {
             }
         }
 
-        if (anyOn && needNotif) PermissionRow(
+        // Shown whether or not an alarm is on, so the test ring works full-screen too.
+        if (needNotif) PermissionRow(
             if (en) "Allow notifications so alarms can ring" else "Payagan ang notifications para tumunog ang alarm",
         ) { if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
-        if (anyOn && needExact && Build.VERSION.SDK_INT >= 31) PermissionRow(
+        if (needExact && Build.VERSION.SDK_INT >= 31) PermissionRow(
             if (en) "Allow exact alarms so they ring on time" else "Payagan ang eksaktong oras ng alarm",
         ) { ctx.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + ctx.packageName))) }
-        if (anyOn && needFullScreen && Build.VERSION.SDK_INT >= 34) PermissionRow(
+        if (needFullScreen && Build.VERSION.SDK_INT >= 34) PermissionRow(
             if (en) "Allow full-screen alarms on the lock screen" else "Payagan ang full-screen na alarm",
         ) { ctx.startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:" + ctx.packageName))) }
 
-        TextButton(onClick = { AlarmScheduler.test(ctx, AlarmSpec.MAIN) }, contentPadding = PaddingValues(0.dp)) {
+        TextButton(onClick = {
+            // Ask for what's missing first, so the test shows exactly what a real alarm will.
+            when {
+                needNotif && Build.VERSION.SDK_INT >= 33 -> notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                needFullScreen && Build.VERSION.SDK_INT >= 34 -> {
+                    Toast.makeText(ctx, if (en) "Turn on full-screen alarms for Weather Alarm PH" else "I-on ang full-screen na alarm para sa Weather Alarm PH", Toast.LENGTH_LONG).show()
+                    ctx.startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:" + ctx.packageName)))
+                }
+                else -> AlarmScheduler.test(ctx, AlarmSpec.MAIN)
+            }
+        }, contentPadding = PaddingValues(0.dp)) {
             Icon(Icons.Rounded.NotificationsActive, null, tint = Teal, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
             Text(if (en) "Test: ring in 10 seconds" else "Subukan: tutunog sa 10 segundo", color = Teal, fontSize = 13.sp)
@@ -917,7 +928,7 @@ private fun FullScreenBanner(lang: Lang, resumes: Int) {
     val ctx = LocalContext.current
     if (Build.VERSION.SDK_INT < 34) return
     val off = remember(resumes) {
-        AlarmPrefs.all(ctx).any { it.enabled } && !AlarmNotifier.canUseFullScreen(ctx)
+        !AlarmNotifier.canUseFullScreen(ctx)
     }
     if (!off) return
     val en = lang == Lang.EN
