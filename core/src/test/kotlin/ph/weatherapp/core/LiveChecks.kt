@@ -77,6 +77,15 @@ fun main() {
     t("heat: compact date format", PagasaLive.parseDay("20261103") == mnl(3, 0).toLocalDate())
     t("heat: nothing for today → null", PagasaLive.heatFeedJson("2026-11-02", """{"values":[{"date":"2026-11-02","time":"12:00","value":33}]}""", "x", mnl(3, 5)) == null)
 
+    // --- Heat card: PAGASA first, models otherwise; today until 6 PM, then tomorrow
+    val hi = HeatIndexForecast(mnl(5, 5), "x", mnl(5, 0).toLocalDate(), mapOf(8 to 29, 11 to 34, 13 to 35, 14 to 33, 16 to 31))
+    val day = ph.weatherapp.core.engine.HeatDays.forecast(mnl(5, 7), hi, emptyList())
+    t("heat card: PAGASA peak 35 at 1 PM", day?.peakC == 35 && day.peakHour == 13 && day.fromPagasa)
+    t("heat card: extreme caution 11 AM–2 PM", day?.level == HeatIndexLevel.EXTREME_CAUTION && day.topFrom == 11 && day.topTo == 14)
+    val pts = (0..47).map { h -> HourlyPoint(mnl(5, 0).plusHours(h.toLong()), 10, 32.0, 5.0, 8.0, 70) }
+    val evening = ph.weatherapp.core.engine.HeatDays.forecast(mnl(5, 19), hi, listOf(SourceForecast("m", mnl(5, 0), pts)))
+    t("heat card: after 6 PM shows tomorrow from models", evening?.date == mnl(6, 0).toLocalDate() && !evening.fromPagasa && evening.peakC >= 33)
+
     println(if (nok == 0) "All live checks passed" else "$nok live check(s) FAILED")
     if (nok > 0) kotlin.system.exitProcess(1)
 }

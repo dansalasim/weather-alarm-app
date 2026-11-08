@@ -7,6 +7,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import ph.weatherapp.core.area.Areas
 import ph.weatherapp.core.engine.Consolidator
+import ph.weatherapp.core.engine.HeatDay
+import ph.weatherapp.core.engine.HeatDays
 import ph.weatherapp.core.engine.MANILA
 import ph.weatherapp.core.engine.Windows
 import ph.weatherapp.core.model.ForecastWindow
@@ -49,6 +51,7 @@ object WeatherRepository {
         val failures: List<String>,
         val fetchedAt: ZonedDateTime,      // when the oldest data used was downloaded
         val fromCache: Boolean,
+        val heat: HeatDay? = null,         // the day's heat index (PAGASA, else models)
     ) {
         val current: WindowForecast? get() = windows.getOrNull(0)
         val next: WindowForecast? get() = windows.getOrNull(1)
@@ -208,6 +211,7 @@ object WeatherRepository {
             failures = failures,
             fetchedAt = fetchedAt,
             fromCache = fromCache,
+            heat = runCatching { HeatDays.forecast(now, feed.heatIndex, sources) }.getOrNull(),
         )
     }
 

@@ -53,6 +53,8 @@ import ph.weatherapp.core.engine.Periods
 import ph.weatherapp.core.premium.Entitlements
 import ph.weatherapp.core.premium.Plan
 import ph.weatherapp.core.engine.Lang
+import ph.weatherapp.core.engine.MANILA
+import ph.weatherapp.core.engine.HeatDay
 import ph.weatherapp.core.engine.Priority
 import ph.weatherapp.core.engine.Recommendation
 import ph.weatherapp.core.engine.Recommender
@@ -260,6 +262,7 @@ fun ForecastScreen(resumes: Int, onEditProfile: () -> Unit) {
                 urgentWarning(r.current, r.next)?.let { (rec, until) -> AlertBanner(rec, lang, until) }
 
                 r.current?.let { HeroCard(it, lang, partial = r.currentIsPartial) }
+                r.heat?.let { HeatCard(it, lang) }
                 if (r.sixHour) {
                     if (r.later.isNotEmpty()) BlocksCard(r.later, lang)
                 } else {
@@ -267,7 +270,7 @@ fun ForecastScreen(resumes: Int, onEditProfile: () -> Unit) {
                     if (!premium) PremiumTeaser(lang) { showPlans = true }
                 }
 
-                if (premium) Profile.lgu(ctx, r.place.areaId)?.let { (name, url) -> LguCard(name, url, lang) }
+                if (premium) Profile.lgu(ctx, r.place).let { LguCard(it?.first, it?.second, r.place.name, lang, onEditProfile) }
                 AccuracyCard(lang, resumes)
                 AlarmsSection(lang, resumes)
                 PremiumCard(premium, lang) { setPremium(it) }
@@ -675,7 +678,7 @@ internal fun SuspensionCard(sp: Suspension, lang: Lang) {
 // ---------- LGU announcements (premium) ----------
 
 @Composable
-private fun LguCard(lguName: String, lguUrl: String, lang: Lang) {
+private fun LguCard(lguName: String?, lguUrl: String?, placeName: String, lang: Lang, onAdd: () -> Unit) {
     val ctx = LocalContext.current
     val en = lang == Lang.EN
     Column(
@@ -691,6 +694,19 @@ private fun LguCard(lguName: String, lguUrl: String, lang: Lang) {
             Spacer(Modifier.width(8.dp))
             Text(if (en) "LGU announcements" else "Mga anunsyo ng LGU", fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
+        if (lguUrl == null) {
+            // Nothing entered for this place: no other town's page is shown.
+            Text(
+                if (en) "No LGU page added for $placeName." else "Wala pang LGU page para sa $placeName.",
+                color = Muted, fontSize = 13.sp,
+            )
+            OutlinedButton(onClick = onAdd, shape = RoundedCornerShape(12.dp)) {
+                Icon(Icons.Rounded.Add, null, tint = Teal, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (en) "Add official Facebook page" else "Idagdag ang opisyal na Facebook page", color = Teal)
+            }
+            return@Column
+        }
         Row(
             Modifier
                 .fillMaxWidth()
@@ -705,7 +721,7 @@ private fun LguCard(lguName: String, lguUrl: String, lang: Lang) {
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(lguName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(lguName ?: "", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text(if (en) "Official Facebook page" else "Opisyal na Facebook page", color = Muted, fontSize = 12.sp)
             }
             Icon(Icons.Rounded.OpenInNew, null, tint = Teal, modifier = Modifier.size(18.dp))
@@ -934,6 +950,100 @@ private fun FullScreenBanner(lang: Lang, resumes: Int) {
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Amber, contentColor = Navy),
             ) { Text(if (en) "Turn on" else "I-on", fontWeight = FontWeight.Bold) }
+        }
+    }
+}
+
+// ---------- Heat index of the day (PAGASA heat effect-based classification) ----------
+
+private data class HeatStyle(val bg: Color, val fg: Color, val en: String, val fil: String, val effectEn: String, val effectFil: String, val range: String)
+
+/** Colors as in the CDRRMO Heat Index Advisory; effects as worded by PAGASA. */
+private fun heatStyle(level: HeatIndexLevel): HeatStyle = when (level) {
+    HeatIndexLevel.CAUTION -> HeatStyle(Color(0xFFFDE047), Color(0xFF2B2600), "Caution", "Mag-ingat", 
+        "Fatigue is possible with prolonged exposure and activity. Continuing activity could lead to heat cramps.",
+        "Posibleng mapagod sa matagal na pagkakabilad at gawain. Kapag itinuloy, maaaring pulikatin dahil sa init.", "27–32°C")
+    HeatIndexLevel.EXTREME_CAUTION -> HeatStyle(Color(0xFFF59E0B), Color(0xFF2A1600), "Extreme caution", "Labis na pag-iingat",
+        "Heat cramps and heat exhaustion are possible. Continuing activity could lead to heat stroke.",
+        "Posible ang pulikat at pagkahapo dahil sa init. Kapag itinuloy ang gawain, maaaring ma-heat stroke.", "33–41°C")
+    HeatIndexLevel.DANGER -> HeatStyle(Color(0xFFEA580C), Color.White, "Danger", "Panganib",
+        "Heat cramps and heat exhaustion are likely; heat stroke is probable with continued exposure.",
+        "Malamang ang pulikat at pagkahapo dahil sa init; posibleng ma-heat stroke kapag patuloy na nakabilad.", "42–51°C")
+    HeatIndexLevel.EXTREME_DANGER -> HeatStyle(Color(0xFFDC2626), Color.White, "Extreme danger", "Matinding panganib",
+        "Heat stroke is imminent.", "Napipintong ma-heat stroke.", "52°C and above")
+}
+
+private fun hourLabel(h: Int) = "${(h % 12).let { if (it == 0) 12 else it }} ${if (h < 12) "AM" else "PM"}"
+
+@Composable
+internal fun HeatCard(h: HeatDay, lang: Lang) {
+    val level = h.level ?: return          // below 27°C: not hazardous, no card
+    val en = lang == Lang.EN
+    val st = heatStyle(level)
+    val today = h.date == ZonedDateTime.now(MANILA).toLocalDate()
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .background(st.bg)
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Thermostat, null, tint = st.fg, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(
+                (if (en) "HEAT INDEX · " + (if (today) "TODAY" else "TOMORROW")
+                 else "HEAT INDEX · " + (if (today) "NGAYONG ARAW" else "BUKAS")),
+                color = st.fg, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                if (h.fromPagasa) "PAGASA" else (if (en) "Estimate" else "Tantiya"),
+                color = st.bg, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.background(st.fg, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text("${h.peakC}°C", color = st.fg, fontSize = 64.sp, fontWeight = FontWeight.Black, lineHeight = 66.sp)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.padding(bottom = 10.dp)) {
+                Text((if (en) st.en else st.fil).uppercase(), color = st.fg, fontSize = 20.sp, fontWeight = FontWeight.Black, lineHeight = 22.sp)
+                h.peakHour?.let {
+                    Text((if (en) "Peak around " else "Pinakamainit bandang ") + hourLabel(it), color = st.fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        Text(if (en) st.effectEn else st.effectFil, color = st.fg, fontSize = 15.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp)
+        if (h.topFrom != null && h.topTo != null && h.topFrom != h.topTo) {
+            Text(
+                (if (en) "${st.en} from ${hourLabel(h.topFrom)} to ${hourLabel(h.topTo)}. Limit outdoor activity, drink water often."
+                 else "${st.fil} mula ${hourLabel(h.topFrom)} hanggang ${hourLabel(h.topTo)}. Bawasan ang gawain sa labas, uminom ng tubig."),
+                color = st.fg, fontSize = 13.sp, lineHeight = 18.sp,
+            )
+        }
+        // Scale: where today sits among PAGASA's four categories
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (l in HeatIndexLevel.entries) {
+                val s = heatStyle(l)
+                val on = l == level
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        Modifier.fillMaxWidth().height(if (on) 10.dp else 6.dp)
+                            .clip(RoundedCornerShape(3.dp)).background(s.bg)
+                            .then(if (on) Modifier.border(1.5.dp, st.fg, RoundedCornerShape(3.dp)) else Modifier),
+                    )
+                    Text(s.range.substringBefore("–").substringBefore("°"), color = st.fg.copy(alpha = if (on) 1f else 0.7f),
+                        fontSize = 10.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
+                }
+            }
+        }
+        if (!h.fromPagasa) {
+            Text(
+                if (en) "Estimated from forecast models; PAGASA's heat index not available yet."
+                else "Tantiya mula sa forecast models; wala pang heat index ng PAGASA.",
+                color = st.fg.copy(alpha = 0.8f), fontSize = 11.sp,
+            )
         }
     }
 }

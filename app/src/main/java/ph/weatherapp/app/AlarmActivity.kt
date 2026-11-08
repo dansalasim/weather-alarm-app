@@ -151,6 +151,7 @@ private fun AlarmScreen(
                 urgentWarning(d.current, d.next)?.let { (rec, until) -> AlertBanner(rec, lang, until) }
                 if (spec.isMain) {
                     d.current?.let { HeroCard(it, lang, partial = d.currentIsPartial) }
+                    d.heat?.let { HeatCard(it, lang) }
                     if (d.sixHour) {
                         if (d.later.isNotEmpty()) BlocksCard(d.later, lang)
                     } else {

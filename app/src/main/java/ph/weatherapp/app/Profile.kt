@@ -15,23 +15,35 @@ object Profile {
 
     fun nickname(ctx: Context): String? = p(ctx).getString("nickname", null)?.takeIf { it.isNotBlank() }
 
-    /** The user's LGU page; falls back to the built-in page of the current covered city. */
-    fun lgu(ctx: Context, areaId: String?): Pair<String, String>? {
-        val name = p(ctx).getString("lgu_name", null)?.takeIf { it.isNotBlank() }
-        val url = p(ctx).getString("lgu_url", null)?.takeIf { it.isNotBlank() }
-        if (url != null) return (name ?: "Official LGU page") to url
-        val a = Areas.byId(areaId) ?: return null
+    /*
+     * LGU page, saved per place: what the user entered for THIS city/municipality.
+     * Changing location never carries another town's LGU over. Isabela City and Zamboanga City
+     * have a built-in official page; anywhere else with nothing entered → null (card asks to add one).
+     */
+    private fun key(place: Place) = place.code ?: place.cacheKey
+
+    fun lgu(ctx: Context, place: Place): Pair<String, String>? {
+        val k = key(place)
+        val url = p(ctx).getString("lgu_url_$k", null)?.takeIf { it.isNotBlank() }
+        if (url != null) return (p(ctx).getString("lgu_name_$k", null)?.takeIf { it.isNotBlank() } ?: "Official LGU page") to url
+        val a = Areas.byId(place.areaId) ?: return null
         return a.lguPageUrl?.let { a.lguName to it }
     }
 
-    fun savedLguName(ctx: Context) = p(ctx).getString("lgu_name", null) ?: ""
-    fun savedLguUrl(ctx: Context) = p(ctx).getString("lgu_url", null) ?: ""
+    /** What was entered for this place, if anything (for the setup form). */
+    fun savedLgu(ctx: Context, place: Place): Pair<String, String>? {
+        val k = key(place)
+        val name = p(ctx).getString("lgu_name_$k", null) ?: return null
+        return name to (p(ctx).getString("lgu_url_$k", null) ?: "")
+    }
 
-    fun save(ctx: Context, nickname: String, lguName: String, lguUrl: String?) {
+    fun save(ctx: Context, nickname: String, place: Place, lguName: String, lguUrl: String?) {
+        val k = key(place)
         p(ctx).edit()
             .putString("nickname", nickname.trim())
-            .putString("lgu_name", lguName.trim())
-            .putString("lgu_url", lguUrl)
+            .putString("lgu_name_$k", lguName.trim())
+            .putString("lgu_url_$k", lguUrl ?: "")
+            .remove("lgu_name").remove("lgu_url")   // old single-LGU entry (before per-place)
             .putBoolean("setup_done", true)
             .apply()
     }

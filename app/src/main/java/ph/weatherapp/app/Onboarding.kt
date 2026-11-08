@@ -126,14 +126,18 @@ fun SetupScreen(editing: Boolean, onDone: () -> Unit) {
     var locating by remember { mutableStateOf(false) }
     var locationNote by remember { mutableStateOf<String?>(null) }
     var showSearch by remember { mutableStateOf(false) }
-    var lguName by remember { mutableStateOf(Profile.savedLguName(app)) }
-    var lguUrl by remember { mutableStateOf(Profile.savedLguUrl(app)) }
-    var lguEdited by remember { mutableStateOf(lguUrl.isNotBlank()) }
+    val savedForPlace = place?.let { Profile.savedLgu(app, it) }
+    var lguName by remember { mutableStateOf(savedForPlace?.first ?: "") }
+    var lguUrl by remember { mutableStateOf(savedForPlace?.second ?: "") }
+    var lguEdited by remember { mutableStateOf(false) }
 
     // Pre-fill the LGU unless the user typed their own: the built-in page for Isabela and
     // Zamboanga; elsewhere just the name ("Municipal Government of Maluso"), so only the link is left.
     fun prefillLgu(p: Place?) {
-        if (lguEdited) return
+        // A new location gets its own LGU: what was saved for it, else the built-in page
+        // (Isabela, Zamboanga), else just its name with the link left blank.
+        lguEdited = false
+        p?.let { Profile.savedLgu(app, it) }?.let { (n, u) -> lguName = n; lguUrl = u; return }
         val a = Areas.byId(p?.areaId)
         if (a != null) {
             lguName = a.lguName
@@ -268,7 +272,7 @@ fun SetupScreen(editing: Boolean, onDone: () -> Unit) {
 
         Button(
             onClick = {
-                Profile.save(app, nickname, lguName, Profile.normalizeFacebookUrl(lguUrl))
+                Profile.save(app, nickname, place!!, lguName, Profile.normalizeFacebookUrl(lguUrl))
                 onDone()
             },
             enabled = canFinish,
