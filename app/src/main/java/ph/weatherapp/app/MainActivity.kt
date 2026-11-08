@@ -1015,10 +1015,12 @@ internal fun HeatCard(h: HeatDay, lang: Lang) {
             }
         }
         Text(if (en) st.effectEn else st.effectFil, color = st.fg, fontSize = 15.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp)
-        if (h.topFrom != null && h.topTo != null && h.topFrom != h.topTo) {
+        val from = h.topFrom
+        val to = h.topTo
+        if (from != null && to != null && from != to) {
             Text(
-                (if (en) "${st.en} from ${hourLabel(h.topFrom)} to ${hourLabel(h.topTo)}. Limit outdoor activity, drink water often."
-                 else "${st.fil} mula ${hourLabel(h.topFrom)} hanggang ${hourLabel(h.topTo)}. Bawasan ang gawain sa labas, uminom ng tubig."),
+                (if (en) "${st.en} from ${hourLabel(from)} to ${hourLabel(to)}. Limit outdoor activity, drink water often."
+                 else "${st.fil} mula ${hourLabel(from)} hanggang ${hourLabel(to)}. Bawasan ang gawain sa labas, uminom ng tubig."),
                 color = st.fg, fontSize = 13.sp, lineHeight = 18.sp,
             )
         }
